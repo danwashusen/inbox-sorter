@@ -12,3 +12,8 @@ must not be contradicted: raise a conflict instead of designing around it.
   flow, setup command, labels, config, safety and R-slug requirements.
 - [Terminal UX](ux.md): role ui-design, binding. Live dashboard, long
   resumable runs, stopping, plain mode and the setup wizard.
+
+<!-- doc-catalogue -->
+- `docs/prd.md` — prd — binding — Product requirements: v1 scope, triage flow, setup command, labels, config, safety, and R-slug requirements.
+- `docs/ux.md` — ui-design — binding — Terminal UX: live dashboard, long resumable runs, stopping, plain mode, and the setup wizard.
+<!-- /doc-catalogue -->
