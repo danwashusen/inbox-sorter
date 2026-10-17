@@ -6,6 +6,7 @@ decision model running on Apple Silicon (MPS).
 ## Commands
 
 - `uv run pytest`: run the unit tests (fast; no model load).
+- `uv run pytest -m model`: run the slow tests that load clef.
 - `uv run python smoke_clef.py`: load clef and classify sample emails.
 - `mise exec -- mdsmith check .`: lint all Markdown; `fix` auto-fixes.
 
@@ -35,6 +36,7 @@ glob: "docs/**/*.md"
 sort: path
 row: "- [{summary}]({filename})"
 ?>
+- [Straw-man architecture for inbox-sorter: module map, core types, the run loop and its per-message atomic Gmail update, the swappable decision engine seam (clef today, Jev or others later), the Gmail seam, on-disk state, dependencies, and open questions.](docs/architecture.md)
 - [Non-negotiable engineering rules for inbox-sorter: simplicity and dependencies, code layout, terminal output and exit codes, safety and privacy, and the basic testing bar (fast unit tests, no coverage target).](docs/constitution.md)
 - [Product requirements for inbox-sorter v1: goals, non-goals, the label/archive/mark-read triage flow, the setup command that imports Gmail labels, clef questions, when the Sorter label parent is used, config format, safety rules, success metrics, milestones and decisions.](docs/prd.md)
 - [Index of inbox-sorter's design documents, with each one's role and whether it binds implementation work or is background only.](docs/README.md)
