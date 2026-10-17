@@ -5,6 +5,7 @@ decision model running on Apple Silicon (MPS).
 
 ## Commands
 
+- `uv run pytest`: run the unit tests (fast; no model load).
 - `uv run python smoke_clef.py`: load clef and classify sample emails.
 - `mise exec -- mdsmith check .`: lint all Markdown; `fix` auto-fixes.
 
@@ -35,6 +36,7 @@ sort: path
 row: "- [{summary}]({filename})"
 ?>
 - [Product requirements for inbox-sorter v1: goals, non-goals, the label/archive/mark-read triage flow, the setup command that imports Gmail labels, clef questions, when the Sorter label parent is used, config format, safety rules, success metrics, milestones and decisions.](docs/prd.md)
+- [Index of inbox-sorter's design documents, with each one's role and whether it binds implementation work or is background only.](docs/README.md)
 - [Terminal UX for inbox-sorter: the live run dashboard layout, progress and ETA, resumable runs over a 10k+ unread backlog, stopping safely, keep-awake and notifications, plain log mode, the setup wizard, the trust-building workflow, and the CLI libraries.](docs/ux.md)
 <?/catalog?>
 
