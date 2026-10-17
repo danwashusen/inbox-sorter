@@ -80,11 +80,11 @@ ignore:
   - ".venv/**"
   - ".worktrees/**" # github-pipeline workspaces; linted in their own checkout
 
-# COMMANDS.md holds github-pipeline config blocks. The plugin rewrites
-# their exact bytes on every setup run, so rules that would reformat
-# them are off for that file only.
+# COMMANDS.md and docs/README.md hold github-pipeline config blocks. The
+# plugin rewrites their exact bytes and parses one entry per line, so rules
+# that would reformat them are off for those files only.
 overrides:
-  - glob: ["COMMANDS.md"]
+  - glob: ["COMMANDS.md", "docs/README.md"]
     rules:
       first-line-heading: false
       line-length: false
