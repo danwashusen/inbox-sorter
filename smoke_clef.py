@@ -7,6 +7,8 @@ import time
 import torch
 from huggingface_hub import snapshot_download
 
+from inbox_sorter.clef_request import build_request
+
 MODEL_ID = "Cloudflare/clef"
 
 QUESTIONS = {
@@ -66,7 +68,7 @@ def main() -> None:
 
     for email in EMAILS:
         start = time.perf_counter()
-        response = systemone(model, processor, {"model": "clef", "state": email, "questions": QUESTIONS})
+        response = systemone(model, processor, build_request(email, QUESTIONS))
         elapsed = time.perf_counter() - start
         print(f"== {email['subject']}  ({elapsed:.2f}s, {response['usage']['input_tokens']} tokens)")
         print(json.dumps(response["answers"], indent=2))

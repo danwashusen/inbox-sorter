@@ -78,3 +78,14 @@ rules:
 
 ignore:
   - ".venv/**"
+  - ".worktrees/**" # github-pipeline workspaces; linted in their own checkout
+
+# COMMANDS.md holds github-pipeline config blocks. The plugin rewrites
+# their exact bytes on every setup run, so rules that would reformat
+# them are off for that file only.
+overrides:
+  - glob: ["COMMANDS.md"]
+    rules:
+      first-line-heading: false
+      line-length: false
+      blank-line-around-lists: false
