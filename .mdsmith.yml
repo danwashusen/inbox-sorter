@@ -18,7 +18,7 @@ rules:
     max: 4000 # per file; keeps any one doc a small slice of context
 
   # --- Progressive disclosure: every doc needs a one-line summary --------
-  # CLAUDE.md indexes docs/** from these summaries via <?catalog?>.
+  # AGENTS.md indexes docs/** from these summaries via <?catalog?>.
   required-frontmatter:
     fields: [summary]
     include: ["docs/**"]

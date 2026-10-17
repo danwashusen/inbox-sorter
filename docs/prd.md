@@ -7,7 +7,8 @@ summary: >-
 ---
 # inbox-sorter PRD
 
-Status: draft, v1 scope. Owner: Dan.
+Status: draft, v1 scope. Owner: Dan. Terminal UX, progress display and
+long runs are in the [terminal UX spec](ux.md).
 
 ## Problem
 
@@ -42,7 +43,7 @@ One run of `inbox-sorter run` does the following:
 1. Load the config and the [clef](https://huggingface.co/Cloudflare/clef)
    model on the local GPU (MPS).
 2. Fetch inbox messages that lack the `Sorter/_processed` label, up to a
-   per-run cap.
+   per-run cap, or all of them with `--all`.
 3. For each message, send sender, subject and snippet to clef as the state.
    Ask the three questions below in one call.
 4. If category confidence is below its threshold, fetch the plain-text body
@@ -205,7 +206,8 @@ The `gmail.modify` scope cannot permanently delete mail.
 3. `setup`: import labels, write the config, report accuracy.
 4. Dry-run classification over the sample, then tune category descriptions.
 5. `--apply` with labels, flags, archive, mark read and the run log.
-6. `undo`, and a hand-checked accuracy review against the metrics.
+6. Live dashboard, `--all` and long-run support from the UX spec.
+7. `undo`, and a hand-checked accuracy review against the metrics.
 
 ## Decisions
 

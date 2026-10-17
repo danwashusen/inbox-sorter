@@ -27,7 +27,7 @@ Docs are edited on parallel branches, so write them to merge cleanly.
 
 Read a doc only when the task needs it. The index below is generated from
 each file's `summary` front matter; edit the summary, then run
-`mdsmith fix CLAUDE.md`.
+`mdsmith fix AGENTS.md`.
 
 <?catalog
 glob: "docs/**/*.md"
@@ -35,4 +35,5 @@ sort: path
 row: "- [{summary}]({filename})"
 ?>
 - [Product requirements for inbox-sorter v1: goals, non-goals, the label/archive/mark-read triage flow, the setup command that imports Gmail labels, clef questions, when the Sorter label parent is used, config format, safety rules, success metrics, milestones and decisions.](docs/prd.md)
+- [Terminal UX for inbox-sorter: the live run dashboard layout, progress and ETA, resumable runs over a 10k+ unread backlog, stopping safely, keep-awake and notifications, plain log mode, the setup wizard, the trust-building workflow, and the CLI libraries.](docs/ux.md)
 <?/catalog?>
