@@ -1,0 +1,70 @@
+# .mdsmith/wordlists/ai-speak.yaml
+#
+# Scaffolded by `mdsmith init --add wordlists` from the built-in
+# no-llm-tells vocabulary. This file is yours: add or remove
+# entries freely. Reference it from a rule's lists: key, e.g.
+#
+#   rules:
+#     forbidden-text:
+#       lists: [ai-speak]
+entries:
+    - delve
+    - dive into
+    - dive deep
+    - deep dive
+    - tapestry
+    - realm
+    - testament
+    - vibrant
+    - pivotal
+    - robust
+    - seamless
+    - leverage
+    - unlock
+    - unleash
+    - embark
+    - foster
+    - showcase
+    - emphasize
+    - enhance
+    - highlight
+    - crucial
+    - essential
+    - comprehensive
+    - holistic
+    - multifaceted
+    - nuanced
+    - intricate
+    - paradigm
+    - ecosystem
+    - transformative
+    - profound
+    - paramount
+    - honest
+    - boast
+    - garner
+    - bolster
+    - myriad
+    - plethora
+    - endeavor
+    - spearhead
+    - revolutionize
+    - groundbreaking
+    - cutting-edge
+    - effortless
+    - supercharge
+    - it's important to note that
+    - it's worth mentioning that
+    - in today's fast-paced world
+    - in the digital age
+    - in the realm of
+    - in the world of
+    - at its core
+    - plays a crucial role
+    - stands as a testament to
+    - a deep dive into
+    - as we navigate
+    - harness the power of
+    - unlock the potential of
+    - embark on a journey
+    - navigating the complexities of

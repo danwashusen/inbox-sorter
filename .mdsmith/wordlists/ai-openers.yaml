@@ -1,0 +1,26 @@
+# .mdsmith/wordlists/ai-openers.yaml
+#
+# Scaffolded by `mdsmith init --add wordlists` from the built-in
+# no-llm-tells vocabulary. This file is yours: add or remove
+# entries freely. Reference it from a rule's lists: key, e.g.
+#
+#   rules:
+#     forbidden-paragraph-starts:
+#       lists: [ai-openers]
+entries:
+    - Certainly,
+    - Moreover,
+    - Additionally,
+    - Furthermore,
+    - Indeed,
+    - Notably,
+    - Importantly,
+    - Crucially,
+    - Essentially,
+    - Ultimately,
+    - Fundamentally,
+    - Basically,
+    - In essence,
+    - In conclusion,
+    - To summarize,
+    - To sum up,

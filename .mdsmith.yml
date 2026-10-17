@@ -1,0 +1,80 @@
+# mdsmith config: strict, and tuned for docs that LLM agents read.
+# Only deviations from the built-in defaults are listed here.
+# Inspect the effective config for a file with:
+#   mdsmith kinds resolve <file>
+
+# GFM (tables, task lists) plus pinned emphasis and list-marker styles.
+convention: github
+
+rules:
+  # --- Structure: predictable shape, cheap to navigate -------------------
+  single-h1:
+    front-matter-title: "" # title lives in the H1, not front matter
+  max-file-length:
+    max: 250
+  max-section-length:
+    max: 60 # lines per section; split long sections into subsections
+  token-budget:
+    max: 4000 # per file; keeps any one doc a small slice of context
+
+  # --- Progressive disclosure: every doc needs a one-line summary --------
+  # CLAUDE.md indexes docs/** from these summaries via <?catalog?>.
+  required-frontmatter:
+    fields: [summary]
+    include: ["docs/**"]
+
+  # --- Prose: short, plain, low-filler ------------------------------------
+  paragraph-structure:
+    max-sentences: 5
+    max-words-per-sentence: 30
+  paragraph-readability:
+    max-index: 14
+    min-words: 20
+  forbidden-text:
+    lists: [ai-speak]
+  forbidden-paragraph-starts:
+    lists: [ai-openers]
+  over-repetition:
+    scope: section
+    max: 6
+  duplicated-content: true
+
+  # --- Merge-safe IDs: requirements use R-<slug>, never R1 or R-1 ---------
+  # Parallel branches can't collide on a slug. Counts prose only, so IDs
+  # are written as plain text, not in code spans.
+  occurrence:
+    pattern: '\bR-?[0-9]+\b'
+    scope: file
+    case-sensitive: true
+    max: 0
+
+  # --- Git: flag a stale merge driver or hook, e.g. after an upgrade -----
+  git-hook-sync: true
+
+  # --- Links: explicit and self-describing --------------------------------
+  descriptive-link-text: true
+  no-reference-style:
+    allow-footnotes: false # inline links keep the target next to the text
+  no-space-in-link-text: true
+  cross-file-reference-integrity:
+    strict: true
+
+  # --- Formatting: one way to write each construct ------------------------
+  no-space-in-code-spans: true
+  ordered-list-numbering:
+    style: sequential
+    start: 1
+  horizontal-rule-style:
+    style: dash
+    length: 3
+    require-blank-lines: true
+  ambiguous-emphasis:
+    max-run: 2
+  no-inline-html:
+    allow: [details, summary]
+  line-length:
+    max: 80
+    reflow: true # `mdsmith fix` rewraps long prose paragraphs
+
+ignore:
+  - ".venv/**"
