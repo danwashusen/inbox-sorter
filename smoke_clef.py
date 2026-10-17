@@ -1,33 +1,28 @@
-"""Smoke test: load Cloudflare/clef (backbone + joint schema head) and classify sample emails."""
+"""Smoke test: classify sample emails with the local clef decision engine."""
 
 import json
-import sys
 import time
+from dataclasses import asdict
 
-import torch
-from huggingface_hub import snapshot_download
-
-from inbox_sorter.clef_request import build_request
-
-MODEL_ID = "Cloudflare/clef"
+from inbox_sorter.engine import Choice, DecisionRequest, Noul, Score
+from inbox_sorter.engines import make_engine
+from inbox_sorter.state import email_state
 
 QUESTIONS = {
-    "category": {
-        "type": "choice",
-        "instructions": "What kind of email is this?",
-        "criteria": {
+    "category": Choice(
+        {
             "newsletter": "Bulk mailing, newsletter or marketing",
             "receipt": "Order confirmation, invoice or receipt",
             "personal": "Written by a person to me",
             "notification": "Automated alert or notice from a service",
         },
-    },
-    "needs_reply": {"type": "noul", "instructions": "Does the sender expect me to reply?"},
-    "urgency": {
-        "type": "score",
-        "instructions": "How soon does this need my attention?",
-        "criteria": ["Can wait", "This week", "Today"],
-    },
+        instructions="What kind of email is this?",
+    ),
+    "needs_reply": Noul("Does the sender expect me to reply?"),
+    "urgency": Score(
+        ("Can wait", "This week", "Today"),
+        instructions="How soon does this need my attention?",
+    ),
 }
 
 EMAILS = [
@@ -55,24 +50,22 @@ EMAILS = [
 
 
 def main() -> None:
-    path = snapshot_download(MODEL_ID)
-    sys.path.insert(0, path)
-    from joint_schema_model import load_release_model, systemone
-
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-    print(f"device={device} torch={torch.__version__}")
-
     start = time.perf_counter()
-    model, processor = load_release_model(path, device=device, dtype=torch.bfloat16)
+    engine = make_engine("clef-local")
+    print(f"engine={engine.name} device={engine.device}")
     print(f"loaded in {time.perf_counter() - start:.1f}s\n")
 
-    for email in EMAILS:
-        start = time.perf_counter()
-        response = systemone(model, processor, build_request(email, QUESTIONS))
-        elapsed = time.perf_counter() - start
-        print(f"== {email['subject']}  ({elapsed:.2f}s, {response['usage']['input_tokens']} tokens)")
-        print(json.dumps(response["answers"], indent=2))
-        print()
+    try:
+        for email in EMAILS:
+            start = time.perf_counter()
+            response = engine.decide(DecisionRequest(email_state(email), QUESTIONS))
+            elapsed = time.perf_counter() - start
+            print(f"== {email['subject']}  ({elapsed:.2f}s)")
+            answers = {qid: asdict(answer) for qid, answer in response.answers.items()}
+            print(json.dumps(answers, indent=2))
+            print()
+    finally:
+        engine.close()
 
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Model tests load clef (~51 GB); run them with `uv run pytest -m model`.
+addopts = "-m 'not model'"
+markers = ["model: loads the clef model; skipped unless selected with -m model"]
 
 [dependency-groups]
 dev = [
