@@ -37,3 +37,24 @@ row: "- [{summary}]({filename})"
 - [Product requirements for inbox-sorter v1: goals, non-goals, the label/archive/mark-read triage flow, the setup command that imports Gmail labels, clef questions, when the Sorter label parent is used, config format, safety rules, success metrics, milestones and decisions.](docs/prd.md)
 - [Terminal UX for inbox-sorter: the live run dashboard layout, progress and ETA, resumable runs over a 10k+ unread backlog, stopping safely, keep-awake and notifications, plain log mode, the setup wizard, the trust-building workflow, and the CLI libraries.](docs/ux.md)
 <?/catalog?>
+
+<!-- claude-code-stack-profile -->
+
+## Running this stack with Claude Code
+
+- Anything that loads clef (`uv run python smoke_clef.py`, model-backed
+  tests, later `inbox-sorter run`) takes about 20 s and 51 GB of memory.
+  Run it in the background, log it, then read the tail:
+  `uv run python smoke_clef.py > /tmp/inbox-sorter-clef.log 2>&1`. Run
+  one model-loading command at a time.
+- Quiet the model-loading noise without hiding results:
+  `HF_HUB_DISABLE_PROGRESS_BARS=1 TRANSFORMERS_VERBOSITY=error`.
+- Run tests targeted and terse: `uv run pytest tests/test_<x>.py -q -x`.
+  Re-run only failures with `uv run pytest --lf -q`.
+- The first `uv run` after a lock change can download torch. Run it in the
+  background and wait. Model weights live in `~/.cache/huggingface`;
+  never download them again.
+- `uv lock --check` and `mise exec -- mdsmith check .` are fast; run them
+  inline.
+
+<!-- /claude-code-stack-profile -->

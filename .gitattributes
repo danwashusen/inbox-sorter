@@ -3,4 +3,6 @@
 *.markdown merge=mdsmith
 .venv/**/*.md merge=text
 .venv/**/*.markdown merge=text
+.worktrees/**/*.md merge=text
+.worktrees/**/*.markdown merge=text
 # END mdsmith merge-driver
