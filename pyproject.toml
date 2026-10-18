@@ -4,13 +4,19 @@ version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
     "accelerate>=1.15.0",
+    "google-api-python-client>=2.201.0",
+    "google-auth-oauthlib>=1.5.0",
     "huggingface-hub>=2.2.0",
     "pillow>=13.0.0",
     "safetensors>=0.8.0",
     "torch>=2.14.1",
     "torchvision>=0.29.1",
     "transformers>=5.20.1",
+    "typer>=0.27.3",
 ]
+
+[project.scripts]
+inbox-sorter = "inbox_sorter.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.8.16,<0.9.0"]
@@ -19,8 +25,12 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Model tests load clef (~51 GB); run them with `uv run pytest -m model`.
-addopts = "-m 'not model'"
-markers = ["model: loads the clef model; skipped unless selected with -m model"]
+# Gmail tests sign in to the owner's real inbox; run them with `uv run pytest -m gmail`.
+addopts = "-m 'not model and not gmail'"
+markers = [
+    "model: loads the clef model; skipped unless selected with -m model",
+    "gmail: reads the owner's real Gmail inbox; skipped unless selected with -m gmail",
+]
 
 [dependency-groups]
 dev = [
