@@ -4,6 +4,7 @@ Plain text, readable in a monochrome terminal (R-monochrome-safe). No email
 body is ever printed.
 """
 
+import unicodedata
 from typing import TextIO
 
 from inbox_sorter.gmail import PROCESSED_LABEL
@@ -53,7 +54,7 @@ class TableReporter:
                 ]
                 self._write(_row(cells, planned_actions(decision)))
             case MessageFailed():
-                self._write(f"{event.message_id}{GAP}failed: {event.error}")
+                self._write(f"{event.message_id}{GAP}failed: {_one_line(event.error)}")
             case RunFinished():
                 self._write(
                     f"Dry run finished: {event.decided} planned, {event.failed} failed. "
@@ -71,7 +72,17 @@ def _row(cells: list[str], rest: str) -> str:
 
 def _fit(text: str, width: int) -> str:
     """One line, cut with "…" to ``width`` and padded to it."""
-    text = " ".join(text.split())
+    text = _one_line(text)
     if len(text) > width:
         text = text[: width - 1] + "…"
     return text.ljust(width)
+
+
+def _one_line(text: str) -> str:
+    """Fold whitespace, and show other control characters as "?".
+
+    Headers come from senders, so a raw escape sequence could restyle or
+    rewrite the terminal.
+    """
+    text = " ".join(text.split())
+    return "".join("?" if unicodedata.category(char) == "Cc" else char for char in text)

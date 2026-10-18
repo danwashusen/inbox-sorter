@@ -54,3 +54,17 @@ def test_long_cells_are_cut_with_an_ellipsis():
     TableReporter(out)(MessageDecided(email, decide(email, response(), CONFIG, False)))
 
     assert "x" * 35 + "…  " in out.getvalue()
+
+
+def test_control_characters_in_headers_and_errors_are_not_printed_raw():
+    out = io.StringIO()
+    email = make_email(sender="Evil\x1b[2J <x@example>", subject="Hi\x07")
+    report = TableReporter(out)
+
+    report(MessageDecided(email, decide(email, response(), CONFIG, False)))
+    report(MessageFailed("m2", "line one\nline\x1b two"))
+
+    text = out.getvalue()
+    assert "\x1b" not in text and "\x07" not in text
+    assert "Evil?[2J <x@example>" in text
+    assert text.splitlines()[-1] == "m2  failed: line one line? two"
