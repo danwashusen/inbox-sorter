@@ -17,6 +17,7 @@ SUBJECT_WIDTH = COLUMNS[1][1]
 
 CANCELLED = "setup cancelled; nothing was written"
 INPUT_ENDED = "input ended before setup finished; nothing was written"
+NOT_TEXT = "input is not UTF-8 text; nothing was written"
 
 
 def preview_lines(label: LabelInfo, samples: Sequence[Email]) -> list[str]:
@@ -83,6 +84,8 @@ class LinePrompter:
             line = self.inp.readline()
         except KeyboardInterrupt:
             raise SetupCancelled(CANCELLED) from None
+        except UnicodeDecodeError:
+            raise SetupCancelled(NOT_TEXT) from None
         if not line:
             raise SetupCancelled(INPUT_ENDED)
         return line.rstrip("\r\n")

@@ -160,7 +160,7 @@ def run_setup(mailbox: Mailbox, prompter: Prompter, existing: Config | None) -> 
 def _samples(mailbox: Mailbox, label: LabelInfo) -> list[Email]:
     """The label's newest messages; one deleted since listing (404) is skipped."""
     samples = []
-    for message_id in mailbox.list_by_label(label.name, SAMPLE_SIZE)[:SAMPLE_SIZE]:
+    for message_id in mailbox.list_by_label(label.name, SAMPLE_SIZE):
         try:
             samples.append(mailbox.get_message(message_id))
         except MailboxError as error:

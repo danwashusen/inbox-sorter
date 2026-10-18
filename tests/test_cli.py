@@ -139,3 +139,16 @@ def test_setup_stops_on_an_invalid_config_before_sign_in(tmp_path, monkeypatch):
 
     assert result.exit_code == 1
     assert "invalid TOML" in str(result.exception)
+
+
+def test_setup_stops_before_sign_in_when_the_directory_is_missing(tmp_path, monkeypatch):
+    def connect(state_dir):
+        raise AssertionError("signed in")
+
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connect))
+    config = tmp_path / "missing" / "inbox-sorter.toml"
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert "does not exist" in str(result.exception)

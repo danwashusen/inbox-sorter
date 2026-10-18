@@ -377,3 +377,27 @@ def test_write_config_refuses_a_config_that_does_not_load(tmp_path):
         write_config(path, bad, None)
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_write_config_replaces_a_symlinks_target_not_the_link(tmp_path):
+    real = tmp_path / "dotfiles" / "inbox-sorter.toml"
+    real.parent.mkdir()
+    real.write_text(PRD_EXAMPLE)
+    link = tmp_path / "inbox-sorter.toml"
+    link.symlink_to(real)
+
+    write_config(link, make_config(RECEIPTS), load_config(link))
+
+    assert link.is_symlink()
+    assert load_config(real) == make_config(RECEIPTS)
+    assert sorted(p.name for p in real.parent.iterdir()) == ["inbox-sorter.toml"]
+
+
+def test_text_that_is_not_unicode_is_a_config_error(tmp_path):
+    path = tmp_path / "inbox-sorter.toml"
+    bad = make_config(Category(**{**vars(RECEIPTS), "description": "bad \ud800"}))
+
+    with pytest.raises(ConfigError, match="cannot write the config file"):
+        write_config(path, bad, None)
+
+    assert list(tmp_path.iterdir()) == []

@@ -102,8 +102,11 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
     """Build the config from your Gmail labels. Reads Gmail only; writes only the config file."""
     opts: CliOptions = ctx.obj
     path = resolve_config_path(config)
-    # An invalid existing config stops setup before sign-in or any prompt.
+    # An invalid existing config, or nowhere to write one, stops setup before
+    # sign-in or any prompt.
     existing = load_config(path) if path.exists() else None
+    if not path.parent.is_dir():
+        raise ConfigError(f"{path}: the directory {path.parent} does not exist")
     with redirect_stdout(sys.stderr):  # the OAuth prompt prints (C-plain-output)
         mailbox = GmailMailbox.connect(state_dir())
 

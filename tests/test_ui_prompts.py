@@ -98,3 +98,11 @@ def test_preview_lines_without_samples_is_the_header_only():
     empty = LabelInfo(id="L1", name="Empty", system=False, message_count=0)
 
     assert preview_lines(empty, []) == ["Empty · 0 messages"]
+
+
+def test_input_that_is_not_utf8_cancels():
+    inp = io.TextIOWrapper(io.BytesIO(b"\xff\n"), encoding="utf-8")
+    line = LinePrompter(inp, io.StringIO())
+
+    with pytest.raises(SetupCancelled, match="not UTF-8"):
+        line.confirm("Use it?", True)

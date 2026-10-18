@@ -70,7 +70,7 @@ Modules marked **(exists)** are built. The others are planned.
   messages. So far it dry-runs: no apply, log or stop flag.
 - `runlog.py`: appends one JSON line per decision; reads a run back for
   `undo`.
-- `setup.py` **(exists)**: re-sync, the wizard, the accuracy report (#9).
+- `setup.py` **(exists)**: re-sync and the wizard; accuracy report to come.
 - `ui/dashboard.py`: renders `RunEvent`s as the live panel.
 - `ui/plain.py`, `ui/table.py` and `ui/prompts.py` **(exist)**: plain
   lines, the dry-run table shown until the panel lands, `setup` prompts.

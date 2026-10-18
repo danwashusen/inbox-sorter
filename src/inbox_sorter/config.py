@@ -174,9 +174,11 @@ def write_config(path: Path, config: Config, previous: Config | None) -> None:
         if current != previous:
             raise changed
 
-    temp = path.with_name(f".{path.name}.tmp")
+    # Replace a symlink's target, not the link (the config may live in a dotfiles repo).
+    target = path.resolve()
+    temp = target.with_name(f".{target.name}.tmp")
     try:
-        mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
+        mode = target.stat().st_mode & 0o777 if target.exists() else 0o644
         temp.write_text(render_config(config), encoding="utf-8")
         os.chmod(temp, mode)
         try:
@@ -185,9 +187,11 @@ def write_config(path: Path, config: Config, previous: Config | None) -> None:
             raise ConfigError(f"{path}: the rendered config does not load: {error}") from error
         if written != config:
             raise ConfigError(f"{path}: the rendered config does not read back equal")
-        os.replace(temp, path)
+        os.replace(temp, target)
     except OSError as error:
         raise ConfigError(f"{path}: cannot write the config file: {error_reason(error)}") from error
+    except UnicodeError as error:  # a lone surrogate cannot be written as UTF-8
+        raise ConfigError(f"{path}: cannot write the config file: {error.reason}") from error
     finally:
         temp.unlink(missing_ok=True)
 
