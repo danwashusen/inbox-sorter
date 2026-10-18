@@ -1,4 +1,6 @@
 import base64
+import http.client
+import stat
 import subprocess
 import sys
 
@@ -9,6 +11,7 @@ from inbox_sorter.gmail import (
     GmailMailbox,
     LabelInfo,
     MailboxError,
+    _write_private,
     email_from_metadata,
     extract_body,
 )
@@ -166,6 +169,12 @@ def test_fake_mailbox_lists_by_label_newest_first_up_to_the_limit():
     assert mailbox.list_by_label("Unknown", 5) == []
 
 
+def test_fake_mailbox_returns_metadata_only():
+    stored = Email("m1", "a@example.com", "Hi", "", frozenset({"INBOX"}), body="Hello")
+
+    assert FakeMailbox([stored]).get_message("m1").body is None
+
+
 def test_fake_mailbox_raises_404_for_an_unknown_message():
     with pytest.raises(MailboxError) as caught:
         FakeMailbox().get_message("missing")
@@ -303,8 +312,11 @@ def test_gmail_errors_become_mailbox_errors_with_the_status():
     assert caught.value.status == 503
 
 
-def test_network_errors_become_mailbox_errors_without_a_status():
-    service = StubService({"messages.get": ConnectionResetError("reset")})
+@pytest.mark.parametrize(
+    "error", [ConnectionResetError("reset"), http.client.IncompleteRead(b"")], ids=type
+)
+def test_network_errors_become_mailbox_errors_without_a_status(error):
+    service = StubService({"messages.get": error})
 
     with pytest.raises(MailboxError) as caught:
         GmailMailbox(service).get_body("m1", 50)
@@ -312,11 +324,40 @@ def test_network_errors_become_mailbox_errors_without_a_status():
     assert caught.value.status is None
 
 
+def test_a_failed_token_refresh_during_a_read_is_a_mailbox_error():
+    from google.auth.exceptions import RefreshError
+
+    service = StubService({"messages.list": RefreshError("invalid_grant")})
+
+    with pytest.raises(MailboxError, match="delete token.json"):
+        GmailMailbox(service).list_unprocessed()
+
+
 def test_connect_without_a_client_secret_names_the_expected_path(tmp_path):
     with pytest.raises(MailboxError) as caught:
         GmailMailbox.connect(tmp_path)
 
     assert str(tmp_path / "client_secret.json") in str(caught.value)
+
+
+def test_connect_with_a_malformed_client_secret_names_the_path(tmp_path):
+    (tmp_path / "client_secret.json").write_text('{"type": "service_account"}')
+
+    with pytest.raises(MailboxError) as caught:
+        GmailMailbox.connect(tmp_path)
+
+    assert str(tmp_path / "client_secret.json") in str(caught.value)
+
+
+def test_token_file_is_written_private_even_when_it_exists(tmp_path):
+    token = tmp_path / "token.json"
+    token.write_text("old")
+    token.chmod(0o644)
+
+    _write_private(token, "new")
+
+    assert token.read_text() == "new"
+    assert stat.S_IMODE(token.stat().st_mode) == 0o600
 
 
 @pytest.mark.gmail

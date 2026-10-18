@@ -82,12 +82,12 @@ Built so far: `engine.py`, `engines/`, `state.py`, `types.py`,
 Plain frozen dataclasses in `types.py`, shared by every module.
 
 - `Email`: id, sender, subject, snippet, label IDs, and body when fetched.
-- `Answers`: category probabilities, `needs_reply` probability and
-  `urgency` score, in engine-neutral form.
-- `Decision`: category, labels to add, labels to remove, and whether it
-  is low confidence or used the body.
-- `RunEvent`: started, decided, retrying, error and finished variants,
-  carrying the counts the dashboard needs.
+- `Answers` (planned): category probabilities, `needs_reply` probability
+  and `urgency` score, in engine-neutral form.
+- `Decision`: category, confidence, the two flags, labels to add and
+  remove, and whether it is low confidence or used the body.
+- `RunEvent`: `RunStarted`, `MessageDecided`, `MessageFailed` and
+  `RunFinished` so far; a retrying variant comes with retries.
 
 ## Run loop
 

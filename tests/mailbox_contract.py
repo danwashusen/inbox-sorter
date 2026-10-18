@@ -18,6 +18,7 @@ def assert_conforms(mailbox: Mailbox) -> None:
     assert isinstance(email, Email)
     assert email.id == message_id
     assert "INBOX" in email.label_ids
+    assert email.body is None, "get_message returns metadata only"
 
     body = mailbox.get_body(message_id, 50)
     assert isinstance(body, str)

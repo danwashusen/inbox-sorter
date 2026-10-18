@@ -1,6 +1,7 @@
 """An in-memory Mailbox for tests."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from inbox_sorter.gmail import PROCESSED_LABEL, LabelInfo, MailboxError
 from inbox_sorter.types import Email
@@ -45,7 +46,7 @@ class FakeMailbox:
     def get_message(self, message_id: str) -> Email:
         for email in self.emails:
             if email.id == message_id:
-                return email
+                return replace(email, body=None)  # metadata only, as in Gmail
         raise MailboxError(f"no message {message_id!r}", status=404)
 
     def get_body(self, message_id: str, max_chars: int) -> str:

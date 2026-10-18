@@ -6,6 +6,7 @@ them, so importing this module or its pure helpers never loads them.
 
 import base64
 import html
+import http.client
 import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -142,8 +143,13 @@ def _html_text(markup: str) -> str:
 
 @contextmanager
 def _gmail_errors() -> Iterator[None]:
-    """Turn Google and network errors into MailboxError, keeping the HTTP status."""
+    """Turn Google and network errors into MailboxError, keeping the HTTP status.
+
+    The Gmail client refreshes an expired access token inside any call, so
+    sign-in errors can surface here as well as HTTP and network ones.
+    """
     import httplib2
+    from google.auth.exceptions import RefreshError, TransportError
     from googleapiclient.errors import HttpError
 
     try:
@@ -151,7 +157,12 @@ def _gmail_errors() -> Iterator[None]:
     except HttpError as error:
         status = int(error.resp.status)
         raise MailboxError(f"Gmail request failed ({status}): {error.reason}", status=status) from error
-    except (OSError, httplib2.HttpLib2Error) as error:
+    except RefreshError as error:
+        raise MailboxError(
+            "the Gmail sign-in has expired or was revoked; delete token.json in the "
+            "state directory and run again to sign in"
+        ) from error
+    except (OSError, http.client.HTTPException, httplib2.HttpLib2Error, TransportError) as error:
         raise MailboxError(f"could not reach Gmail: {error}") from error
 
 
@@ -211,7 +222,13 @@ class GmailMailbox:
                 except TransportError as error:
                     raise MailboxError("could not reach Google to refresh the Gmail sign-in") from error
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(str(secret_path), SCOPES)
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(str(secret_path), SCOPES)
+                except ValueError as error:
+                    raise MailboxError(
+                        f"{secret_path} is not a desktop OAuth client secret; download one "
+                        "from Google Cloud Console and save it there"
+                    ) from error
                 credentials = flow.run_local_server(port=0)
             _write_private(token_path, credentials.to_json())
 

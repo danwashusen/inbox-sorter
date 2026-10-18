@@ -65,6 +65,15 @@ CATEGORY_KEYS: dict[str, type] = {
 
 TYPE_NAMES = {bool: "a boolean", int: "an integer", float: "a number", str: "a string"}
 
+# Allowed (lowest, highest) for numeric settings; None is unbounded.
+RANGES: dict[str, tuple[float, float | None]] = {
+    "max_messages": (1, None),
+    "body_chars": (0, None),
+    "needs_reply_min": (0, 1),  # a probability
+    "today_min_score": (0, 2),  # expected urgency score
+    "min_confidence": (0, 1),
+}
+
 
 def load_config(path: Path) -> Config:
     """Read the config at ``path``. Raises ConfigError naming the cause."""
@@ -77,6 +86,8 @@ def load_config(path: Path) -> Config:
         raise ConfigError(f"{path}: cannot read the config file: {error.strerror}")
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"{path}: invalid TOML: {error}")
+    except UnicodeDecodeError:
+        raise ConfigError(f"{path}: the config file is not UTF-8 text")
 
     unknown = [key for key in data if key not in TABLES]
     if unknown:
@@ -115,7 +126,7 @@ def _settings[T](cls: type[T], data: dict[str, Any], table: str, path: Path) -> 
         raise ConfigError(f"{path}: [{table}] has unknown key {unknown[0]!r}")
     return cls(
         **{
-            key: _value(value, known[key].type, f"{path}: [{table}] {key}")
+            key: _checked(key, value, known[key].type, f"{path}: [{table}] {key}")
             for key, value in raw.items()
         }
     )
@@ -133,7 +144,7 @@ def _category(raw: dict[str, Any], position: int, path: Path) -> Category:
         raise ConfigError(f"{where} is missing required key {missing[0]!r}")
 
     values = {
-        key: _value(raw[key], kind, f"{where}: {key}")
+        key: _checked(key, raw[key], kind, f"{where}: {key}")
         for key, kind in CATEGORY_KEYS.items()
         if kind is not list
     }
@@ -150,8 +161,6 @@ def _category(raw: dict[str, Any], position: int, path: Path) -> Category:
     source = values["source"]
     if source not in SOURCES:
         raise ConfigError(f"{where}: unknown source {source!r}; expected one of {', '.join(SOURCES)}")
-    if not 0 <= values["min_confidence"] <= 1:
-        raise ConfigError(f"{where}: min_confidence must be between 0 and 1")
     under_sorter = values["gmail_label"].startswith(CREATED_PREFIX)
     if source == "created" and not under_sorter:
         raise ConfigError(f"{where}: a created category's gmail_label must start with {CREATED_PREFIX!r}")
@@ -161,6 +170,18 @@ def _category(raw: dict[str, Any], position: int, path: Path) -> Category:
         )
 
     return Category(actions=tuple(actions), **values)
+
+
+def _checked(key: str, value: Any, kind: type, where: str) -> Any:
+    """Check a value's type, then its range when RANGES bounds the key."""
+    value = _value(value, kind, where)
+    if key in RANGES:
+        low, high = RANGES[key]
+        if high is None and not value >= low:
+            raise ConfigError(f"{where} must be at least {low}, got {value!r}")
+        if high is not None and not low <= value <= high:
+            raise ConfigError(f"{where} must be between {low} and {high}, got {value!r}")
+    return value
 
 
 def _value(value: Any, kind: type, where: str) -> Any:

@@ -7,4 +7,5 @@ def state_dir(home: Path | None = None) -> Path:
     """Return the state directory, creating it readable only by the user."""
     path = (home or Path.home()) / "Library" / "Application Support" / "inbox-sorter"
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.chmod(0o700)  # also tighten a directory the user made, which holds the client secret
     return path

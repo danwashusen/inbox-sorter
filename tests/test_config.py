@@ -103,6 +103,14 @@ def test_int_is_accepted_for_a_float(tmp_path):
     assert isinstance(config.categories[0].min_confidence, float)
 
 
+def test_non_utf8_file_is_a_config_error(tmp_path):
+    path = tmp_path / "inbox-sorter.toml"
+    path.write_bytes(ALERTS.encode("utf-16"))
+
+    with pytest.raises(ConfigError, match="not UTF-8"):
+        load_config(path)
+
+
 def test_missing_file_names_the_path_and_setup(tmp_path):
     path = tmp_path / "missing.toml"
 
@@ -143,6 +151,10 @@ def test_missing_file_names_the_path_and_setup(tmp_path):
         (ALERTS.replace('id = "alerts"\n', ""), "category #1 is missing required key 'id'"),
         ('[run]\nmax_messages = "50"\n' + ALERTS, "[run] max_messages must be an integer"),
         ("[run]\nmax_messages = true\n" + ALERTS, "[run] max_messages must be an integer"),
+        ("[run]\nmax_messages = 0\n" + ALERTS, "[run] max_messages must be at least 1"),
+        ("[run]\nbody_chars = -1\n" + ALERTS, "[run] body_chars must be at least 0"),
+        ("[flags]\nneeds_reply_min = 1.5\n" + ALERTS, "needs_reply_min must be between 0 and 1"),
+        ("[flags]\ntoday_min_score = 3\n" + ALERTS, "today_min_score must be between 0 and 2"),
         (ALERTS.replace("enabled = true", "enabled = 1"), "enabled must be a boolean"),
         (
             ALERTS.replace("min_confidence = 0.0", "min_confidance = 0.0"),
