@@ -4,7 +4,6 @@ Plain text, readable in a monochrome terminal (R-monochrome-safe). No email
 body is ever printed.
 """
 
-import unicodedata
 from typing import TextIO
 
 from inbox_sorter.gmail import PROCESSED_LABEL
@@ -16,6 +15,7 @@ from inbox_sorter.types import (
     RunFinished,
     RunStarted,
 )
+from inbox_sorter.ui.plain import unsafe_char
 
 # (title, width); Planned actions takes the rest of the line.
 COLUMNS = (("Sender", 20), ("Subject", 36), ("Category", 14), ("Conf", 4))
@@ -79,10 +79,10 @@ def _fit(text: str, width: int) -> str:
 
 
 def _one_line(text: str) -> str:
-    """Fold whitespace, and show other control characters as "?".
+    """Fold whitespace, and show other unsafe characters as "?".
 
     Headers come from senders, so a raw escape sequence could restyle or
     rewrite the terminal.
     """
     text = " ".join(text.split())
-    return "".join("?" if unicodedata.category(char) == "Cc" else char for char in text)
+    return "".join("?" if unsafe_char(char) else char for char in text)

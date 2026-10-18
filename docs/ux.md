@@ -102,8 +102,8 @@ order.
 A value is double-quoted when it is empty or holds a space, `"`, `=`, `\`
 or a control character. Inside quotes `\`, `"`, a newline and a tab are
 escaped as `\\`, `\"`, `\n` and `\t`, so a record never spans lines. A
-carriage return becomes `\r`, and any other control character or line
-separator `\uXXXX`.
+carriage return becomes `\r`, and any other control character, line
+separator or bidi control `\uXXXX`, in JSON lines too.
 
 Label lists are joined with `,`. `--json` prints the same records as JSON
 lines, with the record name in `"event"`, and implies `--plain`. No email

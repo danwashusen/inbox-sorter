@@ -68,3 +68,13 @@ def test_control_characters_in_headers_and_errors_are_not_printed_raw():
     assert "\x1b" not in text and "\x07" not in text
     assert "Evil?[2J <x@example>" in text
     assert text.splitlines()[-1] == "m2  failed: line one line? two"
+
+
+def test_bidi_controls_in_headers_are_not_printed_raw():
+    out = io.StringIO()
+    email = make_email(sender="paypal‮moc.liame")
+
+    TableReporter(out)(MessageDecided(email, decide(email, response(), CONFIG, False)))
+
+    assert "‮" not in out.getvalue()
+    assert "paypal?moc.liame" in out.getvalue()

@@ -9,8 +9,10 @@ from typing import Any, TextIO
 
 from inbox_sorter.types import MessageDecided, MessageFailed, RunEvent, RunFinished, RunStarted
 
-# Escapes inside a quoted logfmt value; other control characters become \uXXXX.
+# Escapes inside a quoted logfmt value; other unsafe characters become \uXXXX.
 ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\t": "\\t", "\r": "\\r"}
+# Bidi controls can reorder what a terminal shows (sender spoofing).
+BIDI_CONTROLS = frozenset("\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
 
 
 def plain_line(event: RunEvent, json_lines: bool) -> str:
@@ -79,7 +81,9 @@ class PlainReporter:
 
 def _record(name: str, fields: dict[str, Any], json_lines: bool) -> str:
     if json_lines:
-        return json.dumps({"event": name, **fields}, ensure_ascii=False)
+        line = json.dumps({"event": name, **fields}, ensure_ascii=False)
+        # json leaves these raw, but many line readers split on them.
+        return "".join(f"\\u{ord(char):04x}" if unsafe_char(char) else char for char in line)
     return " ".join([name, *(f"{key}={_logfmt(value)}" for key, value in fields.items())])
 
 
@@ -94,7 +98,7 @@ def _logfmt(value: Any) -> str:
         text = ",".join(value)
     else:
         text = str(value)
-    if text and not any(char in ' "=\\' or _is_control(char) for char in text):
+    if text and not any(char in ' "=\\' or unsafe_char(char) for char in text):
         return text
     return '"' + "".join(_escape(char) for char in text) + '"'
 
@@ -102,9 +106,10 @@ def _logfmt(value: Any) -> str:
 def _escape(char: str) -> str:
     if char in ESCAPES:
         return ESCAPES[char]
-    return f"\\u{ord(char):04x}" if _is_control(char) else char
+    return f"\\u{ord(char):04x}" if unsafe_char(char) else char
 
 
-def _is_control(char: str) -> bool:
-    # Line and paragraph separators would also split a record in some readers.
-    return unicodedata.category(char) in ("Cc", "Zl", "Zp")
+def unsafe_char(char: str) -> bool:
+    """A character that could split a record or restyle a terminal: a control
+    character, a line or paragraph separator, or a bidi control."""
+    return unicodedata.category(char) in ("Cc", "Zl", "Zp") or char in BIDI_CONTROLS

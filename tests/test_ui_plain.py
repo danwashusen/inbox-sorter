@@ -99,3 +99,20 @@ def test_progress_with_an_unknown_total_leaves_total_empty():
         report(DECIDED)
 
     assert out.getvalue().splitlines()[-1] == 'progress done=10 total=""'
+
+
+def test_json_lines_escape_line_separators_and_bidi_controls():
+    email = make_email(subject="a b\x85c‮d")
+    line = plain_line(MessageDecided(email, DECIDED.decision), True)
+
+    assert len(line.splitlines()) == 1
+    assert "‮" not in line
+    assert json.loads(line)["subject"] == "a b\x85c‮d"
+
+
+def test_logfmt_escapes_bidi_controls():
+    email = make_email(subject="pay‮lap")
+
+    assert plain_line(MessageDecided(email, DECIDED.decision), False).endswith(
+        'subject="pay\\u202elap"'
+    )
