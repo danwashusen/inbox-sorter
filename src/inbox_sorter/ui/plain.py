@@ -48,7 +48,7 @@ def plain_line(event: RunEvent, json_lines: bool) -> str:
     return _record(name, fields, json_lines)
 
 
-def progress_line(done: int, total: int, json_lines: bool) -> str:
+def progress_line(done: int, total: int | None, json_lines: bool) -> str:
     """The periodic progress record; not a RunEvent."""
     return _record("progress", {"done": done, "total": total}, json_lines)
 
@@ -71,7 +71,7 @@ class PlainReporter:
             self.done += 1
             # The last message is followed by "finished", not progress.
             if self.done % self.progress_every == 0 and self.done != self.total:
-                self._write(progress_line(self.done, self.total or 0, self.json_lines))
+                self._write(progress_line(self.done, self.total, self.json_lines))
 
     def _write(self, line: str) -> None:
         print(line, file=self.out, flush=True)

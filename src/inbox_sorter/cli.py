@@ -1,6 +1,7 @@
 """The inbox-sorter command line. The only module that imports Typer (C-thin-cli)."""
 
 import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -65,13 +66,15 @@ def run(
     opts: CliOptions = ctx.obj
     cfg = load_config(resolve_config_path(config))
     questions = build_questions(cfg)  # fails on a bad config before the model load
-    mailbox = GmailMailbox.connect(state_dir())
-
-    print("loading the clef model…", file=sys.stderr, flush=True)
-    try:
-        engine = make_engine("clef-local")  # A-fixed-engine
-    except (OSError, RuntimeError) as error:
-        raise UserError(f"could not load the clef model: {error_reason(error)}") from error
+    # Sign-in and the model load may print (the OAuth prompt does); keep
+    # stdout for the reporter's records (C-plain-output).
+    with redirect_stdout(sys.stderr):
+        mailbox = GmailMailbox.connect(state_dir())
+        print("loading the clef model…", flush=True)
+        try:
+            engine = make_engine("clef-local")  # A-fixed-engine
+        except (OSError, RuntimeError) as error:
+            raise UserError(f"could not load the clef model: {error_reason(error)}") from error
 
     report = (
         PlainReporter(sys.stdout, json_lines=opts.json)

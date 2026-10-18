@@ -68,5 +68,8 @@ def decide(email: Email, response: DecisionResponse, config: Config, used_body: 
 def _category(response: DecisionResponse, config: Config) -> tuple[ChoiceAnswer, Category]:
     answer = response.answers[CATEGORY]
     assert isinstance(answer, ChoiceAnswer)
-    category = next(c for c in config.categories if c.id == answer.choice)
-    return answer, category
+    for category in config.categories:
+        if category.id == answer.choice:
+            return answer, category
+    # An engine bug, not a user error: engines choose only from offered options.
+    raise ValueError(f"engine chose {answer.choice!r}, which is not a configured category")

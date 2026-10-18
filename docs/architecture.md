@@ -147,7 +147,7 @@ Switching engines has three consequences the design accounts for:
 
 - **Calibration.** Probabilities from different engines are not
   comparable, so thresholds may need retuning. `setup`'s accuracy report
-  runs against the configured engine to show that.
+  runs against the engine in use to show that.
 - **Audit.** Each run log line records the engine `name`, so `undo` and
   later analysis know which engine decided.
 - **Privacy.** A hosted engine such as Jev sends email content off the

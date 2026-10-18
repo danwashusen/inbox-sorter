@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+import pytest
+
 from inbox_sorter.triage import decide, needs_body
 from tests.factories import RECEIPTS, make_config, make_email, response
 
@@ -66,3 +68,8 @@ def test_low_confidence_applies_the_label_even_when_the_category_does_not():
 def test_needs_body_is_true_only_below_min_confidence():
     assert needs_body(response(confidence=0.84), CONFIG)
     assert not needs_body(response(confidence=0.85), CONFIG)
+
+
+def test_an_unknown_category_choice_is_an_engine_error():
+    with pytest.raises(ValueError, match="engine chose 'other'"):
+        decide(make_email(), response(category="other"), CONFIG, used_body=False)

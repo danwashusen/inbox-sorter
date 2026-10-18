@@ -1,5 +1,6 @@
 import io
 import json
+import shlex
 
 from inbox_sorter.triage import decide
 from inbox_sorter.types import MessageDecided, MessageFailed, RunFinished, RunStarted
@@ -14,7 +15,7 @@ FINISHED = RunFinished("20261018-140211", decided=1, failed=1)
 
 
 def keys(line):
-    return [field.split("=", 1)[0] for field in line.split(" ") if "=" in field]
+    return [field.split("=", 1)[0] for field in shlex.split(line)[1:]]
 
 
 def test_records_have_their_keys_in_order():
@@ -81,3 +82,13 @@ def test_no_body_is_printed():
     PlainReporter(out, json_lines=True)(MessageDecided(email, DECIDED.decision))
 
     assert "SECRET" not in out.getvalue()
+
+
+def test_progress_with_an_unknown_total_leaves_total_empty():
+    out = io.StringIO()
+    report = PlainReporter(out)
+    report(RunStarted("r", dry_run=True, engine="fake", total=None))
+    for _ in range(10):
+        report(DECIDED)
+
+    assert out.getvalue().splitlines()[-1] == 'progress done=10 total=""'
