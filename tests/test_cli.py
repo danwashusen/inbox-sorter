@@ -1,4 +1,7 @@
 import json
+import os
+
+import pytest
 
 from typer.testing import CliRunner
 
@@ -154,6 +157,7 @@ def test_setup_stops_before_sign_in_when_the_directory_is_missing(tmp_path, monk
     assert "does not exist" in str(result.exception)
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can write to any directory")
 def test_setup_stops_before_sign_in_when_the_directory_is_read_only(tmp_path, monkeypatch):
     def connect(state_dir):
         raise AssertionError("signed in")
@@ -183,3 +187,30 @@ def test_ctrl_c_while_fetching_samples_cancels_setup(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert str(result.exception) == "setup cancelled; nothing was written"
     assert not config.exists()
+
+
+def test_setup_checks_the_directory_a_symlinked_config_points_into(tmp_path, monkeypatch):
+    def connect(state_dir):
+        raise AssertionError("signed in")
+
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connect))
+    link = tmp_path / "inbox-sorter.toml"
+    link.symlink_to(tmp_path / "unmounted" / "inbox-sorter.toml")
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(link)])
+
+    assert result.exit_code == 1
+    assert "unmounted does not exist" in str(result.exception)
+
+
+def test_ctrl_c_during_sign_in_cancels_setup(tmp_path, monkeypatch):
+    def connect(state_dir):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connect))
+    config = tmp_path / "inbox-sorter.toml"
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert str(result.exception) == "setup cancelled; nothing was written"

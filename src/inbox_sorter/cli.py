@@ -106,12 +106,11 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
     # An invalid existing config, or nowhere to write one, stops setup before
     # sign-in or any prompt.
     existing = load_config(path) if path.exists() else None
-    if not path.parent.is_dir():
-        raise ConfigError(f"{path}: the directory {path.parent} does not exist")
-    if not os.access(path.parent, os.W_OK):
-        raise ConfigError(f"{path}: cannot write to the directory {path.parent}")
-    with redirect_stdout(sys.stderr):  # the OAuth prompt prints (C-plain-output)
-        mailbox = GmailMailbox.connect(state_dir())
+    directory = path.resolve().parent  # write_config writes next to a symlink's target
+    if not directory.is_dir():
+        raise ConfigError(f"{path}: the directory {directory} does not exist")
+    if not os.access(directory, os.W_OK):
+        raise ConfigError(f"{path}: cannot write to the directory {directory}")
 
     # Menus need a terminal on stdin as well as stdout; otherwise ask line by line.
     prompter = (
@@ -119,9 +118,11 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
         if not opts.plain and sys.stdin.isatty()
         else LinePrompter(sys.stdin, sys.stdout)
     )
-    try:
+    try:  # Ctrl-C during sign-in or between prompts, as well as at one
+        with redirect_stdout(sys.stderr):  # the OAuth prompt prints (C-plain-output)
+            mailbox = GmailMailbox.connect(state_dir())
         result = run_setup(mailbox, prompter, existing)
-    except KeyboardInterrupt:  # between prompts, while samples are fetched
+    except KeyboardInterrupt:
         raise SetupCancelled(CANCELLED) from None
     if not result.changed:
         if existing is None:
