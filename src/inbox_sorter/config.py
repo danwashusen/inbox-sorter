@@ -160,7 +160,8 @@ def write_config(path: Path, config: Config, previous: Config | None) -> None:
 
     Refuses when the file changed since ``previous`` was loaded from it (or
     appeared, when ``previous`` is None). The text is written to a temp file
-    next to ``path`` and read back with load_config before it replaces the file.
+    next to the file (a symlink's target, never the link) and read back with
+    load_config before it replaces the file.
     """
     changed = ConfigError(f"{path} changed while setup ran; nothing was written; run setup again")
     if previous is None:
