@@ -38,3 +38,13 @@ def test_plain_stdout_holds_only_records_even_when_sign_in_prints(tmp_path, monk
     assert [r["event"] for r in records] == ["started", "decided", "decided", "finished"]
     assert "Please visit this URL" in result.stderr
     assert "loading the clef model" in result.stderr
+
+
+def test_no_enabled_category_names_the_config_file(tmp_path):
+    config = tmp_path / "inbox-sorter.toml"
+    config.write_text(CONFIG.replace("enabled = true", "enabled = false"))
+
+    result = CliRunner().invoke(cli.app, ["run", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert str(result.exception).startswith(f"{config}: no category is enabled")

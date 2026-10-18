@@ -9,7 +9,7 @@ from typing import Annotated
 import typer
 
 from inbox_sorter import runner
-from inbox_sorter.config import load_config, resolve_config_path
+from inbox_sorter.config import ConfigError, load_config, resolve_config_path
 from inbox_sorter.engines import make_engine
 from inbox_sorter.errors import UserError, error_reason
 from inbox_sorter.gmail import GmailMailbox
@@ -64,8 +64,12 @@ def run(
 ) -> None:
     """Show what the sorter would do to unprocessed inbox mail. Changes nothing in Gmail."""
     opts: CliOptions = ctx.obj
-    cfg = load_config(resolve_config_path(config))
-    questions = build_questions(cfg)  # fails on a bad config before the model load
+    path = resolve_config_path(config)
+    cfg = load_config(path)
+    try:
+        questions = build_questions(cfg)  # fails on a bad config before the model load
+    except ConfigError as error:
+        raise ConfigError(f"{path}: {error}") from error  # name the file, as load_config does
     # Sign-in and the model load may print (the OAuth prompt does); keep
     # stdout for the reporter's records (C-plain-output).
     with redirect_stdout(sys.stderr):

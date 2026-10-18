@@ -4,6 +4,7 @@ Plain text, readable in a monochrome terminal (R-monochrome-safe). No email
 body is ever printed.
 """
 
+import unicodedata
 from typing import TextIO
 
 from inbox_sorter.gmail import PROCESSED_LABEL
@@ -71,11 +72,18 @@ def _row(cells: list[str], rest: str) -> str:
 
 
 def _fit(text: str, width: int) -> str:
-    """One line, cut with "…" to ``width`` and padded to it."""
+    """One line, cut with "…" to ``width`` terminal cells and padded to it."""
     text = _one_line(text)
-    if len(text) > width:
-        text = text[: width - 1] + "…"
-    return text.ljust(width)
+    if _cells(text) > width:
+        while _cells(text) > width - 1:
+            text = text[:-1]
+        text += "…"
+    return text + " " * (width - _cells(text))
+
+
+def _cells(text: str) -> int:
+    """Terminal cells: wide and fullwidth characters (CJK, most emoji) take two."""
+    return sum(2 if unicodedata.east_asian_width(char) in "WF" else 1 for char in text)
 
 
 def _one_line(text: str) -> str:

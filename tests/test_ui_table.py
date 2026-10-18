@@ -78,3 +78,14 @@ def test_bidi_controls_in_headers_are_not_printed_raw():
 
     assert "‮" not in out.getvalue()
     assert "paypal?moc.liame" in out.getvalue()
+
+
+def test_wide_characters_are_measured_in_terminal_cells():
+    out = io.StringIO()
+    email = make_email(sender="山田太郎", subject="会議" * 20)
+
+    TableReporter(out)(MessageDecided(email, decide(email, response(), CONFIG, False)))
+
+    row = out.getvalue().splitlines()[0]
+    # 8 cells of sender pad to 20; 34 cells of subject plus "…" pad to 36.
+    assert row.startswith("山田太郎" + " " * 12 + "  " + "会議" * 8 + "会… " + "  receipts")
