@@ -5,7 +5,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from inbox_sorter.errors import UserError
+from inbox_sorter.errors import UserError, os_error_reason
 
 Action = Literal["label", "archive", "mark_read"]
 Source = Literal["imported", "created"]
@@ -83,7 +83,7 @@ def load_config(path: Path) -> Config:
     except FileNotFoundError:
         raise ConfigError(f"{path}: config file not found; run `inbox-sorter setup` to create it")
     except OSError as error:
-        raise ConfigError(f"{path}: cannot read the config file: {error.strerror}")
+        raise ConfigError(f"{path}: cannot read the config file: {os_error_reason(error)}")
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"{path}: invalid TOML: {error}")
     except UnicodeDecodeError:

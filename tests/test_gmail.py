@@ -1,4 +1,5 @@
 import base64
+import errno
 import http.client
 import stat
 import subprocess
@@ -366,11 +367,15 @@ class StaleCredentials:
     expired = True
     refresh_token = "refresh"
 
-    def __init__(self, error):
+    def __init__(self, error=None):
         self.error = error
 
     def refresh(self, request):
-        raise self.error
+        if self.error is not None:
+            raise self.error
+
+    def to_json(self):
+        return "{}"
 
 
 @pytest.mark.parametrize(
@@ -397,21 +402,88 @@ def test_connect_reports_a_failed_refresh(tmp_path, monkeypatch, error, expected
     assert expected.format(token=tmp_path / "token.json") in str(caught.value)
 
 
-def test_connect_reports_a_declined_sign_in(tmp_path, monkeypatch):
+def sign_in_failing_with(error, tmp_path, monkeypatch):
+    """Run connect with no token, against a browser sign-in that raises ``error``."""
     from google_auth_oauthlib.flow import InstalledAppFlow
-    from oauthlib.oauth2.rfc6749.errors import AccessDeniedError
 
-    class DeclinedFlow:
+    class FailingFlow:
         def run_local_server(self, port):
-            raise AccessDeniedError()
+            raise error
 
     (tmp_path / "client_secret.json").write_text("{}")
-    monkeypatch.setattr(
-        InstalledAppFlow, "from_client_secrets_file", lambda *args: DeclinedFlow()
-    )
-
-    with pytest.raises(MailboxError, match="sign-in did not complete \\(access_denied\\)"):
+    monkeypatch.setattr(InstalledAppFlow, "from_client_secrets_file", lambda *args: FailingFlow())
+    with pytest.raises(MailboxError) as caught:
         GmailMailbox.connect(tmp_path)
+    return str(caught.value)
+
+
+def test_connect_reports_a_declined_sign_in(tmp_path, monkeypatch):
+    from oauthlib.oauth2.rfc6749.errors import AccessDeniedError
+
+    message = sign_in_failing_with(AccessDeniedError(), tmp_path, monkeypatch)
+
+    assert "sign-in did not complete (access_denied)" in message
+
+
+def test_connect_reports_a_network_failure_during_sign_in(tmp_path, monkeypatch):
+    import requests
+
+    message = sign_in_failing_with(requests.exceptions.ConnectionError("boom"), tmp_path, monkeypatch)
+
+    assert "could not reach Google" in message
+
+
+@pytest.mark.parametrize(
+    "error, reason",
+    [(OSError(errno.EADDRINUSE, "Address already in use"), "Address already in use"), (OSError(), "OSError")],
+)
+def test_connect_reports_a_local_sign_in_server_error(tmp_path, monkeypatch, error, reason):
+    message = sign_in_failing_with(error, tmp_path, monkeypatch)
+
+    assert message == f"could not start the local Gmail sign-in page: {reason}"
+
+
+@pytest.mark.parametrize("unreadable", ["token.json", "client_secret.json"])
+def test_connect_names_an_unreadable_sign_in_file(tmp_path, monkeypatch, unreadable):
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+
+    def denied(*args):
+        raise PermissionError(errno.EACCES, "Permission denied")
+
+    (tmp_path / "client_secret.json").write_text("{}")
+    if unreadable == "token.json":
+        (tmp_path / "token.json").write_text("{}")
+        monkeypatch.setattr(Credentials, "from_authorized_user_file", denied)
+    else:
+        monkeypatch.setattr(InstalledAppFlow, "from_client_secrets_file", denied)
+
+    with pytest.raises(MailboxError) as caught:
+        GmailMailbox.connect(tmp_path)
+
+    assert str(tmp_path / unreadable) in str(caught.value)
+    assert "Permission denied" in str(caught.value)
+
+
+def test_connect_reports_a_token_that_cannot_be_saved(tmp_path, monkeypatch):
+    from google.oauth2.credentials import Credentials
+
+    import inbox_sorter.gmail
+
+    def full_disk(path, text):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    (tmp_path / "client_secret.json").write_text("{}")
+    (tmp_path / "token.json").write_text("{}")
+    monkeypatch.setattr(Credentials, "from_authorized_user_file", lambda *args: StaleCredentials())
+    monkeypatch.setattr(inbox_sorter.gmail, "_write_private", full_disk)
+
+    with pytest.raises(MailboxError) as caught:
+        GmailMailbox.connect(tmp_path)
+
+    assert str(caught.value) == (
+        f"could not save the Gmail sign-in to {tmp_path / 'token.json'}: No space left on device"
+    )
 
 
 def test_token_file_is_written_private_even_when_it_exists(tmp_path):

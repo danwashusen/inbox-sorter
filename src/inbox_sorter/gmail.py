@@ -15,7 +15,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Protocol
 
-from inbox_sorter.errors import UserError
+from inbox_sorter.errors import UserError, os_error_reason
 from inbox_sorter.types import Email
 
 PROCESSED_LABEL = "Sorter/_processed"
@@ -199,6 +199,7 @@ class GmailMailbox:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
+        import requests
         from googleapiclient.discovery import build
         from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 
@@ -209,6 +210,10 @@ class GmailMailbox:
             except ValueError as error:
                 raise MailboxError(
                     f"cannot read the Gmail sign-in at {token_path}; delete it and run again"
+                ) from error
+            except OSError as error:
+                raise MailboxError(
+                    f"cannot read the Gmail sign-in at {token_path}: {os_error_reason(error)}"
                 ) from error
 
         if credentials is None or not credentials.valid:
@@ -230,17 +235,30 @@ class GmailMailbox:
                         f"{secret_path} is not a desktop OAuth client secret; download one "
                         "from Google Cloud Console and save it there"
                     ) from error
+                except OSError as error:
+                    raise MailboxError(f"cannot read {secret_path}: {os_error_reason(error)}") from error
                 try:
                     credentials = flow.run_local_server(port=0)
                 except OAuth2Error as error:
                     raise MailboxError(
                         f"Gmail sign-in did not complete ({error.error}); run again to retry"
                     ) from error
+                # A RequestException is an OSError, so it must be caught first.
+                except requests.exceptions.RequestException as error:
+                    raise MailboxError(
+                        "could not reach Google to finish the Gmail sign-in; check the "
+                        "network connection and run again"
+                    ) from error
                 except OSError as error:
                     raise MailboxError(
-                        f"could not start the local Gmail sign-in page: {error.strerror}"
+                        f"could not start the local Gmail sign-in page: {os_error_reason(error)}"
                     ) from error
-            _write_private(token_path, credentials.to_json())
+            try:
+                _write_private(token_path, credentials.to_json())
+            except OSError as error:
+                raise MailboxError(
+                    f"could not save the Gmail sign-in to {token_path}: {os_error_reason(error)}"
+                ) from error
 
         return cls(build("gmail", "v1", credentials=credentials, cache_discovery=False))
 

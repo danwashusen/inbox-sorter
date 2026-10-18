@@ -111,6 +111,20 @@ def test_non_utf8_file_is_a_config_error(tmp_path):
         load_config(path)
 
 
+def test_unreadable_file_names_the_reason(tmp_path, monkeypatch):
+    path = tmp_path / "inbox-sorter.toml"
+
+    def broken_open(self, *args, **kwargs):
+        raise OSError("device gone")  # strerror is None
+
+    monkeypatch.setattr(type(path), "open", broken_open)
+
+    with pytest.raises(ConfigError) as caught:
+        load_config(path)
+
+    assert str(caught.value) == f"{path}: cannot read the config file: device gone"
+
+
 def test_missing_file_names_the_path_and_setup(tmp_path):
     path = tmp_path / "missing.toml"
 
