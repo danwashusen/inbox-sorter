@@ -40,6 +40,13 @@ def test_logfmt_escapes_quotes_backslashes_and_newlines():
     assert "\n" not in line
 
 
+def test_logfmt_quotes_and_escapes_other_control_characters():
+    email = make_email(subject="a\rb\x07c\u2028d")
+    line = plain_line(MessageDecided(email, DECIDED.decision), False)
+
+    assert line.endswith('subject="a\\rb\\u0007c\\u2028d"')
+
+
 def test_json_lines_carry_the_same_keys():
     for event in (STARTED, DECIDED, FAILED, FINISHED):
         record = json.loads(plain_line(event, True))

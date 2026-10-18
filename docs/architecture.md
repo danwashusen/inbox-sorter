@@ -91,9 +91,9 @@ Plain frozen dataclasses in `types.py`, shared by every module.
 
 ## Run loop
 
-For each message, in order:
+The loop lists IDs first (A-run-events), then works through them in order:
 
-1. `gmail` lists the next page of inbox IDs without `Sorter/_processed`.
+1. `gmail` lists inbox IDs without `Sorter/_processed`, up to the cap.
 2. `gmail` fetches metadata; the engine answers the three questions.
 3. If `triage` says confidence is low, `gmail` fetches the body and the
    engine answers again (R-body-retry).
