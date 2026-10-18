@@ -152,3 +152,34 @@ def test_setup_stops_before_sign_in_when_the_directory_is_missing(tmp_path, monk
 
     assert result.exit_code == 1
     assert "does not exist" in str(result.exception)
+
+
+def test_setup_stops_before_sign_in_when_the_directory_is_read_only(tmp_path, monkeypatch):
+    def connect(state_dir):
+        raise AssertionError("signed in")
+
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connect))
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    try:
+        result = CliRunner().invoke(cli.app, ["setup", "--config", str(locked / "a.toml")])
+    finally:
+        locked.chmod(0o700)
+
+    assert result.exit_code == 1
+    assert "cannot write to the directory" in str(result.exception)
+
+
+def test_ctrl_c_while_fetching_samples_cancels_setup(tmp_path, monkeypatch):
+    class Interrupted(FakeMailbox):
+        def list_by_label(self, label, limit):
+            raise KeyboardInterrupt
+
+    config = setup_cli(tmp_path, monkeypatch, Interrupted(labels=labels("Bills")))
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)])
+
+    assert result.exit_code == 1
+    assert str(result.exception) == "setup cancelled; nothing was written"
+    assert not config.exists()

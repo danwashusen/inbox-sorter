@@ -1,5 +1,6 @@
 """The inbox-sorter command line. The only module that imports Typer (C-thin-cli)."""
 
+import os
 import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass
@@ -15,10 +16,10 @@ from inbox_sorter.errors import UserError, error_reason
 from inbox_sorter.gmail import GmailMailbox
 from inbox_sorter.questions import build_questions
 # Not `from inbox_sorter import setup`: the setup command below would shadow it.
-from inbox_sorter.setup import run_setup
+from inbox_sorter.setup import SetupCancelled, run_setup
 from inbox_sorter.storage import state_dir
 from inbox_sorter.ui.plain import PlainReporter
-from inbox_sorter.ui.prompts import LinePrompter, MenuPrompter
+from inbox_sorter.ui.prompts import CANCELLED, LinePrompter, MenuPrompter
 from inbox_sorter.ui.table import TableReporter, one_line
 
 # Plain-text help and errors; Rich is reserved for the run dashboard.
@@ -107,6 +108,8 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
     existing = load_config(path) if path.exists() else None
     if not path.parent.is_dir():
         raise ConfigError(f"{path}: the directory {path.parent} does not exist")
+    if not os.access(path.parent, os.W_OK):
+        raise ConfigError(f"{path}: cannot write to the directory {path.parent}")
     with redirect_stdout(sys.stderr):  # the OAuth prompt prints (C-plain-output)
         mailbox = GmailMailbox.connect(state_dir())
 
@@ -116,7 +119,10 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
         if not opts.plain and sys.stdin.isatty()
         else LinePrompter(sys.stdin, sys.stdout)
     )
-    result = run_setup(mailbox, prompter, existing)
+    try:
+        result = run_setup(mailbox, prompter, existing)
+    except KeyboardInterrupt:  # between prompts, while samples are fetched
+        raise SetupCancelled(CANCELLED) from None
     if not result.changed:
         if existing is None:
             print("no categories accepted; nothing was written")
