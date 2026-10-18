@@ -1,6 +1,7 @@
 """Load and validate inbox-sorter.toml into typed settings."""
 
 import os
+import tempfile
 import tomllib
 from dataclasses import astuple, dataclass, fields
 from pathlib import Path
@@ -158,8 +159,8 @@ def render_config(config: Config) -> str:
 def write_config(path: Path, config: Config, previous: Config | None) -> None:
     """Replace the config at ``path`` with ``config``; the only way the config is written.
 
-    Refuses when the file changed since ``previous`` was loaded from it (or
-    appeared, when ``previous`` is None). The text is written to a temp file
+    Refuses when the file no longer loads to ``previous`` (its values changed
+    since setup loaded it), or appeared when ``previous`` is None. The text is written to a temp file
     next to the file (a symlink's target, never the link) and read back with
     load_config before it replaces the file.
     """
@@ -177,10 +178,14 @@ def write_config(path: Path, config: Config, previous: Config | None) -> None:
 
     # Replace a symlink's target, not the link (the config may live in a dotfiles repo).
     target = path.resolve()
-    temp = target.with_name(f".{target.name}.tmp")
+    temp: Path | None = None
     try:
         mode = target.stat().st_mode & 0o777 if target.exists() else 0o644
-        temp.write_text(render_config(config), encoding="utf-8")
+        # A unique name, created exclusively: never a file or link already there.
+        fd, name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+        temp = Path(name)
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            file.write(render_config(config))
         os.chmod(temp, mode)
         try:
             written = load_config(temp)
@@ -194,7 +199,8 @@ def write_config(path: Path, config: Config, previous: Config | None) -> None:
     except UnicodeError as error:  # a lone surrogate cannot be written as UTF-8
         raise ConfigError(f"{path}: cannot write the config file: {error.reason}") from error
     finally:
-        temp.unlink(missing_ok=True)
+        if temp is not None:
+            temp.unlink(missing_ok=True)
 
 
 def _toml(value: Any) -> str:

@@ -19,7 +19,7 @@ talks to the outside world through two seams, Gmail and the decision
 engine, so tests swap both for fakes and clef can be replaced later.
 
 ```text
-            cli.py  (Typer, questionary)          ui/  (Rich dashboard, plain)
+            cli.py  (Typer)                       ui/  (Rich dashboard, plain, questionary)
                │                                     ▲
                ▼                                     │ RunEvent
    setup.py   runner.py ──── triage.py ─────────────┘
@@ -253,5 +253,5 @@ Accepted items move here with an `A-<slug>` ID.
   IDs first, so `RunStarted` has the total. Only a 404 fails one message;
   other Gmail errors end the run. It refuses a non-local engine.
 - A-config-writer: `config.write_config` rewrites the file, no comments,
-  via a temp file that must load back equal; it refuses a changed file.
+  via a temp file that must load back equal; it refuses changed values.
 - A-setup-prompter: `run_setup` asks through a `Prompter` (`ui/prompts.py`).

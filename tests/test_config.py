@@ -401,3 +401,15 @@ def test_text_that_is_not_unicode_is_a_config_error(tmp_path):
         write_config(path, bad, None)
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_write_config_never_writes_through_a_file_at_an_old_temp_name(tmp_path):
+    path = tmp_path / "inbox-sorter.toml"
+    bystander = tmp_path / "bystander.txt"
+    bystander.write_text("keep me")
+    (tmp_path / ".inbox-sorter.toml.tmp").symlink_to(bystander)
+
+    write_config(path, make_config(), None)
+
+    assert bystander.read_text() == "keep me"
+    assert load_config(path) == make_config()

@@ -117,7 +117,7 @@ subjects, cut to the dry-run table's widths. Choices use arrow-key menus
 with sensible defaults, so Enter accepts the common answer:
 
 - Use the label as a category: yes.
-- Description: the label name. A blank one is asked again.
+- Description: the label name. It cannot be blank.
 - Actions: label only, picked from label; label and mark read; label and
   archive; or all three.
 - `min_confidence`: 0.0 for label only, 0.85 when the actions archive or
