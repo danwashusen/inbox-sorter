@@ -360,6 +360,25 @@ def test_a_failed_token_refresh_during_a_read_is_a_mailbox_error():
         GmailMailbox(service).list_unprocessed()
 
 
+def test_a_failed_refresh_during_a_read_names_the_connected_token_path(tmp_path, monkeypatch):
+    from google.auth.exceptions import RefreshError
+    from google.oauth2.credentials import Credentials
+
+    import inbox_sorter.gmail
+
+    service = StubService({"messages.get": RefreshError("invalid_grant")})
+    (tmp_path / "client_secret.json").write_text("{}")
+    (tmp_path / "token.json").write_text("{}")
+    monkeypatch.setattr(Credentials, "from_authorized_user_file", lambda *args: StaleCredentials())
+    monkeypatch.setattr("googleapiclient.discovery.build", lambda *args, **kwargs: service)
+    monkeypatch.setattr(inbox_sorter.gmail, "_write_private", lambda path, text: None)
+
+    with pytest.raises(MailboxError) as caught:
+        GmailMailbox.connect(tmp_path).get_message("m1")
+
+    assert f"delete {tmp_path / 'token.json'} and run again" in str(caught.value)
+
+
 def test_connect_without_a_client_secret_names_the_expected_path(tmp_path):
     with pytest.raises(MailboxError) as caught:
         GmailMailbox.connect(tmp_path)

@@ -145,7 +145,7 @@ def _html_text(markup: str) -> str:
 
 
 @contextmanager
-def _gmail_errors() -> Iterator[None]:
+def _gmail_errors(token_path: Path | None = None) -> Iterator[None]:
     """Turn Google and network errors into MailboxError, keeping the HTTP status.
 
     The Gmail client refreshes an expired access token inside any call, so
@@ -163,9 +163,10 @@ def _gmail_errors() -> Iterator[None]:
             f"Gmail request failed ({status}): {error.reason}", status=status
         ) from error
     except RefreshError as error:
+        token = token_path or "token.json in the state directory"
         raise MailboxError(
-            "the Gmail sign-in has expired or was revoked; delete token.json in the "
-            "state directory and run again to sign in"
+            f"the Gmail sign-in has expired or was revoked; delete {token} "
+            "and run again to sign in"
         ) from error
     except (OSError, http.client.HTTPException, httplib2.HttpLib2Error, TransportError) as error:
         raise MailboxError(f"could not reach Gmail: {error_reason(error)}") from error
@@ -184,6 +185,7 @@ class GmailMailbox:
 
     def __init__(self, service: Any) -> None:
         self._service = service
+        self._token_path: Path | None = None  # set by connect, named in sign-in errors
 
     @classmethod
     def connect(cls, state_dir: Path) -> "GmailMailbox":
@@ -269,14 +271,16 @@ class GmailMailbox:
                     f"could not save the Gmail sign-in to {token_path}: {error_reason(error)}"
                 ) from error
 
-        return cls(build("gmail", "v1", credentials=credentials, cache_discovery=False))
+        mailbox = cls(build("gmail", "v1", credentials=credentials, cache_discovery=False))
+        mailbox._token_path = token_path
+        return mailbox
 
     def list_unprocessed(
         self, page_token: str | None = None, page_size: int = 100
     ) -> tuple[list[str], str | None]:
         # The query excludes processed mail, so a large backlog costs no
         # fetch per already-processed message.
-        with _gmail_errors():
+        with _gmail_errors(self._token_path):
             response = (
                 self._service.users()
                 .messages()
@@ -298,7 +302,7 @@ class GmailMailbox:
         ids: list[str] = []
         page_token = None
         while label_id is not None and len(ids) < limit:
-            with _gmail_errors():
+            with _gmail_errors(self._token_path):
                 response = (
                     self._service.users()
                     .messages()
@@ -317,7 +321,7 @@ class GmailMailbox:
         return ids[: max(limit, 0)]
 
     def get_message(self, message_id: str) -> Email:
-        with _gmail_errors():
+        with _gmail_errors(self._token_path):
             message = (
                 self._service.users()
                 .messages()
@@ -332,7 +336,7 @@ class GmailMailbox:
         return email_from_metadata(message)
 
     def get_body(self, message_id: str, max_chars: int) -> str:
-        with _gmail_errors():
+        with _gmail_errors(self._token_path):
             message = (
                 self._service.users()
                 .messages()
@@ -345,7 +349,7 @@ class GmailMailbox:
         # labels.list returns no counts, so read each label for messagesTotal.
         labels = []
         for raw in self._raw_labels():
-            with _gmail_errors():
+            with _gmail_errors(self._token_path):
                 detail = self._service.users().labels().get(userId="me", id=raw["id"]).execute()
             labels.append(
                 LabelInfo(
@@ -358,5 +362,5 @@ class GmailMailbox:
         return labels
 
     def _raw_labels(self) -> list[dict[str, Any]]:
-        with _gmail_errors():
+        with _gmail_errors(self._token_path):
             return self._service.users().labels().list(userId="me").execute().get("labels", [])
