@@ -15,10 +15,10 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Protocol
 
-from inbox_sorter.errors import UserError, os_error_reason
-from inbox_sorter.types import Email
+from inbox_sorter.errors import UserError, error_reason
+from inbox_sorter.types import SORTER_PREFIX, Email
 
-PROCESSED_LABEL = "Sorter/_processed"
+PROCESSED_LABEL = SORTER_PREFIX + "_processed"
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]  # R-oauth-modify-scope
 # Gmail search writes a nested label name with "/" as "-".
 UNPROCESSED_QUERY = "-label:" + PROCESSED_LABEL.replace("/", "-")
@@ -26,7 +26,7 @@ MAX_PAGE_SIZE = 500  # the most messages.list returns per call
 
 
 class MailboxError(UserError):
-    """A mailbox read failed. ``status`` is the HTTP status, or None for a network error."""
+    """A Gmail sign-in or read failed. ``status`` is the HTTP status when Gmail returned one, else None."""
 
     def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
@@ -163,7 +163,7 @@ def _gmail_errors() -> Iterator[None]:
             "state directory and run again to sign in"
         ) from error
     except (OSError, http.client.HTTPException, httplib2.HttpLib2Error, TransportError) as error:
-        raise MailboxError(f"could not reach Gmail: {error}") from error
+        raise MailboxError(f"could not reach Gmail: {error_reason(error)}") from error
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -213,7 +213,7 @@ class GmailMailbox:
                 ) from error
             except OSError as error:
                 raise MailboxError(
-                    f"cannot read the Gmail sign-in at {token_path}: {os_error_reason(error)}"
+                    f"cannot read the Gmail sign-in at {token_path}: {error_reason(error)}"
                 ) from error
 
         if credentials is None or not credentials.valid:
@@ -236,7 +236,7 @@ class GmailMailbox:
                         "from Google Cloud Console and save it there"
                     ) from error
                 except OSError as error:
-                    raise MailboxError(f"cannot read {secret_path}: {os_error_reason(error)}") from error
+                    raise MailboxError(f"cannot read {secret_path}: {error_reason(error)}") from error
                 try:
                     credentials = flow.run_local_server(port=0)
                 except OAuth2Error as error:
@@ -251,13 +251,13 @@ class GmailMailbox:
                     ) from error
                 except OSError as error:
                     raise MailboxError(
-                        f"could not start the local Gmail sign-in page: {os_error_reason(error)}"
+                        f"could not start the local Gmail sign-in page: {error_reason(error)}"
                     ) from error
             try:
                 _write_private(token_path, credentials.to_json())
             except OSError as error:
                 raise MailboxError(
-                    f"could not save the Gmail sign-in to {token_path}: {os_error_reason(error)}"
+                    f"could not save the Gmail sign-in to {token_path}: {error_reason(error)}"
                 ) from error
 
         return cls(build("gmail", "v1", credentials=credentials, cache_discovery=False))

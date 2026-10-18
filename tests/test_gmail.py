@@ -313,16 +313,37 @@ def test_gmail_errors_become_mailbox_errors_with_the_status():
     assert caught.value.status == 503
 
 
+def bare_transport_error():
+    from google.auth.exceptions import TransportError
+
+    return TransportError()
+
+
+def bare_httplib2_error():
+    import httplib2
+
+    return httplib2.HttpLib2Error()
+
+
 @pytest.mark.parametrize(
-    "error", [ConnectionResetError("reset"), http.client.IncompleteRead(b"")], ids=type
+    "make_error",
+    [
+        lambda: ConnectionResetError("reset"),
+        lambda: http.client.IncompleteRead(b""),
+        OSError,
+        http.client.HTTPException,
+        bare_httplib2_error,
+        bare_transport_error,
+    ],
 )
-def test_network_errors_become_mailbox_errors_without_a_status(error):
-    service = StubService({"messages.get": error})
+def test_network_errors_become_mailbox_errors_without_a_status(make_error):
+    service = StubService({"messages.get": make_error()})
 
     with pytest.raises(MailboxError) as caught:
         GmailMailbox(service).get_body("m1", 50)
 
     assert caught.value.status is None
+    assert not str(caught.value).endswith(": ")
 
 
 def test_a_failed_token_refresh_during_a_read_is_a_mailbox_error():

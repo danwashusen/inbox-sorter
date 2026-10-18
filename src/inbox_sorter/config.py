@@ -5,14 +5,14 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from inbox_sorter.errors import UserError, os_error_reason
+from inbox_sorter.errors import UserError, error_reason
+from inbox_sorter.types import NEEDS_REPLY_LABEL, SORTER_PREFIX, TODAY_LABEL
 
 Action = Literal["label", "archive", "mark_read"]
 Source = Literal["imported", "created"]
 
 ACTIONS: tuple[str, ...] = get_args(Action)
 SOURCES: tuple[str, ...] = get_args(Source)
-CREATED_PREFIX = "Sorter/"  # created labels live under this parent (R-label-placement)
 
 
 class ConfigError(UserError):
@@ -83,7 +83,7 @@ def load_config(path: Path) -> Config:
     except FileNotFoundError:
         raise ConfigError(f"{path}: config file not found; run `inbox-sorter setup` to create it")
     except OSError as error:
-        raise ConfigError(f"{path}: cannot read the config file: {os_error_reason(error)}")
+        raise ConfigError(f"{path}: cannot read the config file: {error_reason(error)}")
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"{path}: invalid TOML: {error}")
     except UnicodeDecodeError:
@@ -102,11 +102,18 @@ def load_config(path: Path) -> Config:
     categories = tuple(
         _category(raw, position, path) for position, raw in enumerate(raw_categories, start=1)
     )
-    seen: set[str] = set()
+    ids: set[str] = set()
+    label_owners: dict[str, str] = {}  # gmail_label -> category id
     for category in categories:
-        if category.id in seen:
+        if category.id in ids:
             raise ConfigError(f"{path}: duplicate category id {category.id!r}")
-        seen.add(category.id)
+        ids.add(category.id)
+        owner = label_owners.setdefault(category.gmail_label, category.id)
+        if owner != category.id:
+            raise ConfigError(
+                f"{path}: categories {owner!r} and {category.id!r} share gmail_label "
+                f"{category.gmail_label!r}"
+            )
 
     return Config(
         run=_settings(RunSettings, data, "run", path),
@@ -161,12 +168,20 @@ def _category(raw: dict[str, Any], position: int, path: Path) -> Category:
     source = values["source"]
     if source not in SOURCES:
         raise ConfigError(f"{where}: unknown source {source!r}; expected one of {', '.join(SOURCES)}")
-    under_sorter = values["gmail_label"].startswith(CREATED_PREFIX)
-    if source == "created" and not under_sorter:
-        raise ConfigError(f"{where}: a created category's gmail_label must start with {CREATED_PREFIX!r}")
+    # Sorter/ holds only labels the tool owns (R-label-placement).
+    label = values["gmail_label"]
+    under_sorter = label.startswith(SORTER_PREFIX)
+    if source == "created":
+        if not under_sorter:
+            raise ConfigError(f"{where}: a created category's gmail_label must start with {SORTER_PREFIX!r}")
+        name = label[len(SORTER_PREFIX) :]
+        if not name:
+            raise ConfigError(f"{where}: a created category's gmail_label needs a name after {SORTER_PREFIX!r}")
+        if name.startswith("_") or label in (NEEDS_REPLY_LABEL, TODAY_LABEL):
+            raise ConfigError(f"{where}: gmail_label {label!r} is reserved for inbox-sorter's own labels")
     if source == "imported" and under_sorter:
         raise ConfigError(
-            f"{where}: an imported category's gmail_label must not start with {CREATED_PREFIX!r}"
+            f"{where}: an imported category's gmail_label must not start with {SORTER_PREFIX!r}"
         )
 
     return Category(actions=tuple(actions), **values)

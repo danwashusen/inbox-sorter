@@ -125,6 +125,13 @@ def test_unreadable_file_names_the_reason(tmp_path, monkeypatch):
     assert str(caught.value) == f"{path}: cannot read the config file: device gone"
 
 
+def test_the_processed_marker_is_reserved(tmp_path):
+    from inbox_sorter.gmail import PROCESSED_LABEL
+
+    with pytest.raises(ConfigError, match="is reserved"):
+        load(tmp_path, ALERTS.replace('"Sorter/Alerts"', f'"{PROCESSED_LABEL}"'))
+
+
 def test_missing_file_names_the_path_and_setup(tmp_path):
     path = tmp_path / "missing.toml"
 
@@ -176,6 +183,17 @@ def test_missing_file_names_the_path_and_setup(tmp_path):
         ),
         ("[run]\nmax_mesages = 10\n" + ALERTS, "[run] has unknown key 'max_mesages'"),
         ('[engine]\nkind = "clef-local"\n' + ALERTS, "unknown table [engine]"),
+        (
+            ALERTS + ALERTS.replace('id = "alerts"', 'id = "notices"'),
+            "categories 'alerts' and 'notices' share gmail_label 'Sorter/Alerts'",
+        ),
+        (ALERTS.replace('"Sorter/Alerts"', '"Sorter/Today"'), "'Sorter/Today' is reserved"),
+        (ALERTS.replace('"Sorter/Alerts"', '"Sorter/Needs reply"'), "'Sorter/Needs reply' is reserved"),
+        (
+            ALERTS.replace('"Sorter/Alerts"', '"Sorter/_low-confidence"'),
+            "'Sorter/_low-confidence' is reserved",
+        ),
+        (ALERTS.replace('"Sorter/Alerts"', '"Sorter/"'), "needs a name after 'Sorter/'"),
     ],
 )
 def test_invalid_config_names_the_cause(tmp_path, text, expected):

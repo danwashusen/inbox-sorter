@@ -1,6 +1,12 @@
-"""Core types shared by every module: emails, decisions and run events."""
+"""Core types and label names shared by every module: emails, decisions and run events."""
 
 from dataclasses import dataclass
+
+# The parent of every label the tool owns (prd.md §Gmail labels). Names
+# under it starting with "_" are bookkeeping markers.
+SORTER_PREFIX = "Sorter/"
+NEEDS_REPLY_LABEL = SORTER_PREFIX + "Needs reply"
+TODAY_LABEL = SORTER_PREFIX + "Today"
 
 
 @dataclass(frozen=True)

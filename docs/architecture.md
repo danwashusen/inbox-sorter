@@ -84,8 +84,8 @@ Plain frozen dataclasses in `types.py`, shared by every module.
 - `Email`: id, sender, subject, snippet, label IDs, and body when fetched.
 - `Answers` (planned): category probabilities, `needs_reply` probability
   and `urgency` score, in engine-neutral form.
-- `Decision`: category, confidence, the two flags, labels to add and
-  remove, and whether it is low confidence or used the body.
+- `Decision`: message ID, category, confidence, the two flags, labels to
+  add and remove, and whether it is low confidence or used the body.
 - `RunEvent`: `RunStarted`, `MessageDecided`, `MessageFailed` and
   `RunFinished` so far; a retrying variant comes with retries.
 
@@ -141,7 +141,7 @@ Adapters:
 - `engines/systemone_http.py`: future. Posts the same request to any
   System One endpoint: Jev's hosted API, or clef served by SGLang.
 
-Config picks the engine:
+Config could pick the engine; whether v1 needs this is #7's call:
 
 ```toml
 [engine]
@@ -236,9 +236,9 @@ Accepted items move here with an `A-<slug>` ID.
   `gmail.py`, with `GmailMailbox` and a test-only `FakeMailbox`. Reads
   are `list_unprocessed`, `list_by_label`, `get_message`, `get_body` and
   `list_labels`; write methods come with the story that applies
-  decisions. Every read raises `MailboxError`, carrying the HTTP status,
-  never a Google exception. The Google libraries are imported only
-  inside `GmailMailbox`, so the core never loads them.
+  decisions. Sign-in and reads raise `MailboxError`, never a Google
+  exception, with any HTTP status. The Google libraries are imported only
+  inside the functions that call Gmail, so the core never loads them.
 - A-core-types: `Email`, `Decision` and the `RunEvent` variants
   `RunStarted`, `MessageDecided`, `MessageFailed` and `RunFinished` are
   frozen dataclasses in `types.py`. `Decision` holds label names,
