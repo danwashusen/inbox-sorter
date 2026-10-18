@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 
 from inbox_sorter.errors import UserError, error_reason
-from inbox_sorter.types import NEEDS_REPLY_LABEL, SORTER_PREFIX, TODAY_LABEL
+from inbox_sorter.types import NEEDS_REPLY_LABEL, SORTER_PREFIX, SYSTEM_LABELS, TODAY_LABEL
 
 Action = Literal["label", "archive", "mark_read"]
 Source = Literal["imported", "created"]
@@ -167,18 +167,28 @@ def _category(raw: dict[str, Any], position: int, path: Path) -> Category:
 
     source = values["source"]
     if source not in SOURCES:
-        raise ConfigError(f"{where}: unknown source {source!r}; expected one of {', '.join(SOURCES)}")
-    # Sorter/ holds only labels the tool owns (R-label-placement).
+        raise ConfigError(
+            f"{where}: unknown source {source!r}; expected one of {', '.join(SOURCES)}"
+        )
     label = values["gmail_label"]
+    if label in SYSTEM_LABELS:  # setup never imports these (prd.md §Setup step 1)
+        raise ConfigError(f"{where}: gmail_label {label!r} is a Gmail system label, not a category")
+    # Sorter/ holds only labels the tool owns (R-label-placement).
     under_sorter = label.startswith(SORTER_PREFIX)
     if source == "created":
         if not under_sorter:
-            raise ConfigError(f"{where}: a created category's gmail_label must start with {SORTER_PREFIX!r}")
+            raise ConfigError(
+                f"{where}: a created category's gmail_label must start with {SORTER_PREFIX!r}"
+            )
         name = label[len(SORTER_PREFIX) :]
         if not name:
-            raise ConfigError(f"{where}: a created category's gmail_label needs a name after {SORTER_PREFIX!r}")
+            raise ConfigError(
+                f"{where}: a created category's gmail_label needs a name after {SORTER_PREFIX!r}"
+            )
         if name.startswith("_") or label in (NEEDS_REPLY_LABEL, TODAY_LABEL):
-            raise ConfigError(f"{where}: gmail_label {label!r} is reserved for inbox-sorter's own labels")
+            raise ConfigError(
+                f"{where}: gmail_label {label!r} is reserved for inbox-sorter's own labels"
+            )
     if source == "imported" and under_sorter:
         raise ConfigError(
             f"{where}: an imported category's gmail_label must not start with {SORTER_PREFIX!r}"
@@ -200,7 +210,10 @@ def _checked(name: str, value: Any, kind: type, where: str) -> Any:
 
 
 def _value(value: Any, kind: type, where: str) -> Any:
-    """Check a scalar's type. An int is accepted for a float; a bool never stands in for a number."""
+    """Check a scalar's type.
+
+    An int is accepted for a float; a bool never stands in for a number.
+    """
     if kind is float and isinstance(value, int) and not isinstance(value, bool):
         return float(value)
     if isinstance(value, bool) != (kind is bool) or not isinstance(value, kind):

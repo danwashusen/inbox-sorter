@@ -188,7 +188,24 @@ def test_missing_file_names_the_path_and_setup(tmp_path):
             "categories 'alerts' and 'notices' share gmail_label 'Sorter/Alerts'",
         ),
         (ALERTS.replace('"Sorter/Alerts"', '"Sorter/Today"'), "'Sorter/Today' is reserved"),
-        (ALERTS.replace('"Sorter/Alerts"', '"Sorter/Needs reply"'), "'Sorter/Needs reply' is reserved"),
+        (
+            ALERTS.replace('"Sorter/Alerts"', '"Sorter/Needs reply"'),
+            "'Sorter/Needs reply' is reserved",
+        ),
+        (
+            ALERTS.replace('"created"', '"imported"').replace('"Sorter/Alerts"', '"INBOX"'),
+            "'INBOX' is a Gmail system label",
+        ),
+        (
+            ALERTS.replace('"created"', '"imported"').replace('"Sorter/Alerts"', '"TRASH"'),
+            "'TRASH' is a Gmail system label",
+        ),
+        (
+            ALERTS.replace('"created"', '"imported"').replace(
+                '"Sorter/Alerts"', '"CATEGORY_PROMOTIONS"'
+            ),
+            "'CATEGORY_PROMOTIONS' is a Gmail system label",
+        ),
         (
             ALERTS.replace('"Sorter/Alerts"', '"Sorter/_low-confidence"'),
             "'Sorter/_low-confidence' is reserved",

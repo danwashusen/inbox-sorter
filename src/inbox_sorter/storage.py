@@ -16,5 +16,7 @@ def state_dir(home: Path | None = None) -> Path:
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
         path.chmod(0o700)  # also tighten a directory the user made, which holds the client secret
     except OSError as error:
-        raise StorageError(f"cannot create the state directory {path}: {error_reason(error)}") from error
+        raise StorageError(
+            f"cannot create the state directory {path}: {error_reason(error)}"
+        ) from error
     return path

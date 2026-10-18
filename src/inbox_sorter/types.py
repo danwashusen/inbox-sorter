@@ -8,6 +8,27 @@ SORTER_PREFIX = "Sorter/"
 NEEDS_REPLY_LABEL = SORTER_PREFIX + "Needs reply"
 TODAY_LABEL = SORTER_PREFIX + "Today"
 
+# Gmail's system labels; each name is also its ID. Setup skips them
+# (prd.md §Setup), so no category may use one.
+SYSTEM_LABELS: frozenset[str] = frozenset(
+    {
+        "INBOX",
+        "SPAM",
+        "TRASH",
+        "UNREAD",
+        "STARRED",
+        "IMPORTANT",
+        "SENT",
+        "DRAFT",
+        "CHAT",
+        "CATEGORY_PERSONAL",
+        "CATEGORY_SOCIAL",
+        "CATEGORY_PROMOTIONS",
+        "CATEGORY_UPDATES",
+        "CATEGORY_FORUMS",
+    }
+)
+
 
 @dataclass(frozen=True)
 class Email:

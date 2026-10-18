@@ -89,7 +89,10 @@ def test_extract_body_prefers_plain_text_in_an_alternative():
 def test_extract_body_skips_a_plain_text_attachment():
     payload = {
         "mimeType": "multipart/mixed",
-        "parts": [part("text/plain", "attached notes", filename="notes.txt"), part("text/html", "Body")],
+        "parts": [
+            part("text/plain", "attached notes", filename="notes.txt"),
+            part("text/html", "Body"),
+        ],
     }
 
     assert extract_body(payload, 100) == "Body"
@@ -101,7 +104,9 @@ def test_extract_body_finds_plain_text_nested_two_levels_deep():
         "parts": [
             {
                 "mimeType": "multipart/related",
-                "parts": [{"mimeType": "multipart/alternative", "parts": [part("text/plain", "Deep")]}],
+                "parts": [
+                    {"mimeType": "multipart/alternative", "parts": [part("text/plain", "Deep")]}
+                ],
             }
         ],
     }
@@ -449,14 +454,19 @@ def test_connect_reports_a_declined_sign_in(tmp_path, monkeypatch):
 def test_connect_reports_a_network_failure_during_sign_in(tmp_path, monkeypatch):
     import requests
 
-    message = sign_in_failing_with(requests.exceptions.ConnectionError("boom"), tmp_path, monkeypatch)
+    error = requests.exceptions.ConnectionError("boom")
+
+    message = sign_in_failing_with(error, tmp_path, monkeypatch)
 
     assert "could not reach Google" in message
 
 
 @pytest.mark.parametrize(
     "error, reason",
-    [(OSError(errno.EADDRINUSE, "Address already in use"), "Address already in use"), (OSError(), "OSError")],
+    [
+        (OSError(errno.EADDRINUSE, "Address already in use"), "Address already in use"),
+        (OSError(), "OSError"),
+    ],
 )
 def test_connect_reports_a_local_sign_in_server_error(tmp_path, monkeypatch, error, reason):
     message = sign_in_failing_with(error, tmp_path, monkeypatch)

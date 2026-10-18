@@ -26,7 +26,10 @@ MAX_PAGE_SIZE = 500  # the most messages.list returns per call
 
 
 class MailboxError(UserError):
-    """A Gmail sign-in or read failed. ``status`` is the HTTP status when Gmail returned one, else None."""
+    """A Gmail sign-in or read failed.
+
+    ``status`` is the HTTP status when Gmail returned one, else None.
+    """
 
     def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
@@ -156,7 +159,9 @@ def _gmail_errors() -> Iterator[None]:
         yield
     except HttpError as error:
         status = int(error.resp.status)
-        raise MailboxError(f"Gmail request failed ({status}): {error.reason}", status=status) from error
+        raise MailboxError(
+            f"Gmail request failed ({status}): {error.reason}", status=status
+        ) from error
     except RefreshError as error:
         raise MailboxError(
             "the Gmail sign-in has expired or was revoked; delete token.json in the "
@@ -226,7 +231,9 @@ class GmailMailbox:
                         "and run again to sign in"
                     ) from error
                 except TransportError as error:
-                    raise MailboxError("could not reach Google to refresh the Gmail sign-in") from error
+                    raise MailboxError(
+                        "could not reach Google to refresh the Gmail sign-in"
+                    ) from error
             else:
                 try:
                     flow = InstalledAppFlow.from_client_secrets_file(str(secret_path), SCOPES)
@@ -236,7 +243,9 @@ class GmailMailbox:
                         "from Google Cloud Console and save it there"
                     ) from error
                 except OSError as error:
-                    raise MailboxError(f"cannot read {secret_path}: {error_reason(error)}") from error
+                    raise MailboxError(
+                        f"cannot read {secret_path}: {error_reason(error)}"
+                    ) from error
                 try:
                     credentials = flow.run_local_server(port=0)
                 except OAuth2Error as error:
@@ -325,7 +334,10 @@ class GmailMailbox:
     def get_body(self, message_id: str, max_chars: int) -> str:
         with _gmail_errors():
             message = (
-                self._service.users().messages().get(userId="me", id=message_id, format="full").execute()
+                self._service.users()
+                .messages()
+                .get(userId="me", id=message_id, format="full")
+                .execute()
             )
         return extract_body(message.get("payload", {}), max_chars)
 
