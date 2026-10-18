@@ -65,13 +65,13 @@ CATEGORY_KEYS: dict[str, type] = {
 
 TYPE_NAMES = {bool: "a boolean", int: "an integer", float: "a number", str: "a string"}
 
-# Allowed (lowest, highest) for numeric settings; None is unbounded.
+# Allowed (lowest, highest) for numeric settings, by "table.key"; None is unbounded.
 RANGES: dict[str, tuple[float, float | None]] = {
-    "max_messages": (1, None),
-    "body_chars": (0, None),
-    "needs_reply_min": (0, 1),  # a probability
-    "today_min_score": (0, 2),  # expected urgency score
-    "min_confidence": (0, 1),
+    "run.max_messages": (1, None),
+    "run.body_chars": (0, None),
+    "flags.needs_reply_min": (0, 1),  # a probability
+    "flags.today_min_score": (0, 2),  # expected urgency score
+    "category.min_confidence": (0, 1),
 }
 
 
@@ -126,7 +126,7 @@ def _settings[T](cls: type[T], data: dict[str, Any], table: str, path: Path) -> 
         raise ConfigError(f"{path}: [{table}] has unknown key {unknown[0]!r}")
     return cls(
         **{
-            key: _checked(key, value, known[key].type, f"{path}: [{table}] {key}")
+            key: _checked(f"{table}.{key}", value, known[key].type, f"{path}: [{table}] {key}")
             for key, value in raw.items()
         }
     )
@@ -144,7 +144,7 @@ def _category(raw: dict[str, Any], position: int, path: Path) -> Category:
         raise ConfigError(f"{where} is missing required key {missing[0]!r}")
 
     values = {
-        key: _checked(key, raw[key], kind, f"{where}: {key}")
+        key: _checked(f"category.{key}", raw[key], kind, f"{where}: {key}")
         for key, kind in CATEGORY_KEYS.items()
         if kind is not list
     }
@@ -172,11 +172,11 @@ def _category(raw: dict[str, Any], position: int, path: Path) -> Category:
     return Category(actions=tuple(actions), **values)
 
 
-def _checked(key: str, value: Any, kind: type, where: str) -> Any:
-    """Check a value's type, then its range when RANGES bounds the key."""
+def _checked(name: str, value: Any, kind: type, where: str) -> Any:
+    """Check a value's type, then its range when RANGES bounds ``name``."""
     value = _value(value, kind, where)
-    if key in RANGES:
-        low, high = RANGES[key]
+    if name in RANGES:
+        low, high = RANGES[name]
         if high is None and not value >= low:
             raise ConfigError(f"{where} must be at least {low}, got {value!r}")
         if high is not None and not low <= value <= high:

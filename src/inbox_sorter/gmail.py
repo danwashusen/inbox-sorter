@@ -200,6 +200,7 @@ class GmailMailbox:
         from google.oauth2.credentials import Credentials
         from google_auth_oauthlib.flow import InstalledAppFlow
         from googleapiclient.discovery import build
+        from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 
         credentials = None
         if token_path.exists():
@@ -211,7 +212,7 @@ class GmailMailbox:
                 ) from error
 
         if credentials is None or not credentials.valid:
-            if credentials is not None and credentials.expired and credentials.refresh_token:
+            if credentials is not None and credentials.refresh_token:
                 try:
                     credentials.refresh(Request())
                 except RefreshError as error:
@@ -229,7 +230,16 @@ class GmailMailbox:
                         f"{secret_path} is not a desktop OAuth client secret; download one "
                         "from Google Cloud Console and save it there"
                     ) from error
-                credentials = flow.run_local_server(port=0)
+                try:
+                    credentials = flow.run_local_server(port=0)
+                except OAuth2Error as error:
+                    raise MailboxError(
+                        f"Gmail sign-in did not complete ({error.error}); run again to retry"
+                    ) from error
+                except OSError as error:
+                    raise MailboxError(
+                        f"could not start the local Gmail sign-in page: {error.strerror}"
+                    ) from error
             _write_private(token_path, credentials.to_json())
 
         return cls(build("gmail", "v1", credentials=credentials, cache_discovery=False))

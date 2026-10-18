@@ -349,6 +349,71 @@ def test_connect_with_a_malformed_client_secret_names_the_path(tmp_path):
     assert str(tmp_path / "client_secret.json") in str(caught.value)
 
 
+def test_connect_with_an_unreadable_token_names_the_path(tmp_path):
+    (tmp_path / "client_secret.json").write_text("{}")
+    (tmp_path / "token.json").write_text("not json")
+
+    with pytest.raises(MailboxError) as caught:
+        GmailMailbox.connect(tmp_path)
+
+    assert str(tmp_path / "token.json") in str(caught.value)
+
+
+class StaleCredentials:
+    """A stored token that is no longer valid but can be refreshed."""
+
+    valid = False
+    expired = True
+    refresh_token = "refresh"
+
+    def __init__(self, error):
+        self.error = error
+
+    def refresh(self, request):
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        ("refresh", "delete {token} and run again"),
+        ("transport", "could not reach Google"),
+    ],
+)
+def test_connect_reports_a_failed_refresh(tmp_path, monkeypatch, error, expected):
+    from google.auth.exceptions import RefreshError, TransportError
+    from google.oauth2.credentials import Credentials
+
+    raised = {"refresh": RefreshError("invalid_grant"), "transport": TransportError("down")}[error]
+    (tmp_path / "client_secret.json").write_text("{}")
+    (tmp_path / "token.json").write_text("{}")
+    monkeypatch.setattr(
+        Credentials, "from_authorized_user_file", lambda *args: StaleCredentials(raised)
+    )
+
+    with pytest.raises(MailboxError) as caught:
+        GmailMailbox.connect(tmp_path)
+
+    assert expected.format(token=tmp_path / "token.json") in str(caught.value)
+
+
+def test_connect_reports_a_declined_sign_in(tmp_path, monkeypatch):
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from oauthlib.oauth2.rfc6749.errors import AccessDeniedError
+
+    class DeclinedFlow:
+        def run_local_server(self, port):
+            raise AccessDeniedError()
+
+    (tmp_path / "client_secret.json").write_text("{}")
+    monkeypatch.setattr(
+        InstalledAppFlow, "from_client_secrets_file", lambda *args: DeclinedFlow()
+    )
+
+    with pytest.raises(MailboxError, match="sign-in did not complete \\(access_denied\\)"):
+        GmailMailbox.connect(tmp_path)
+
+
 def test_token_file_is_written_private_even_when_it_exists(tmp_path):
     token = tmp_path / "token.json"
     token.write_text("old")
