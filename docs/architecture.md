@@ -38,14 +38,12 @@ engine, so tests swap both for fakes and clef can be replaced later.
 All under `src/inbox_sorter/`. Only `cli.py` and `ui/` may import Typer,
 Rich or questionary (C-thin-cli).
 
-Built so far: `engine.py`, `engines/`, `state.py`, `types.py`,
-`errors.py`, `storage.py`, `config.py`, `gmail.py` and `cli.py`, marked
-**(exists)**. Every other module is planned and does not exist yet.
+Modules marked **(exists)** are built. The others are planned.
 
 - `cli.py` **(exists)**: the `setup`, `run` and `undo` commands. Parses
   flags, builds the real Gmail client and decision engine, picks a
-  reporter, maps errors to exit codes (C-exit-codes). So far it has only
-  the shared `--plain` and `--debug` options.
+  reporter, maps errors to exit codes (C-exit-codes). So far: a dry-run
+  `run` and the shared `--plain`, `--json` and `--debug` options.
 - `config.py` **(exists)**: loads and validates `inbox-sorter.toml` into
   typed dataclasses; writes it for `setup` (not yet built).
 - `gmail.py` **(exists)**: a `Mailbox` protocol plus the Gmail API
@@ -62,19 +60,21 @@ Built so far: `engine.py`, `engines/`, `state.py`, `types.py`,
   `make_engine(kind)`. Only adapters import engine libraries such as torch
   or an HTTP client.
 - `state.py` **(exists)**: turns an email into the state an engine reads.
-- `questions.py`: builds the category, `needs_reply` and `urgency`
-  questions from config, in engine-neutral form.
-- `triage.py`: pure functions from answers and config to a `Decision`.
-  Holds every policy rule: thresholds, body retry, flags, and keeping
-  flagged mail in the inbox.
-- `runner.py`: the run loop. Fetch, classify, retry, decide, apply, log.
-  Emits `RunEvent`s and checks a stop flag between messages.
+- `questions.py` **(exists)**: builds the category, `needs_reply` and
+  `urgency` questions from config, in engine-neutral form.
+- `triage.py` **(exists)**: pure functions from answers and config to a
+  `Decision`. Holds every policy rule: thresholds, body retry, flags, and
+  keeping flagged mail in the inbox.
+- `runner.py` **(exists)**: the run loop. Fetch, classify, retry,
+  decide, apply, log. Emits `RunEvent`s and checks a stop flag between
+  messages. So far it dry-runs: no apply, log or stop flag.
 - `runlog.py`: appends one JSON line per decision; reads a run back for
   `undo`.
 - `setup.py`: label filtering, re-sync rules and the accuracy report,
   as pure functions the CLI prompts around.
-- `ui/dashboard.py` and `ui/plain.py`: reporters that render `RunEvent`s
-  as the live panel or plain lines.
+- `ui/dashboard.py`: renders `RunEvent`s as the live panel.
+- `ui/plain.py` **(exists)** and `ui/table.py` **(exists)**: plain lines,
+  and the dry-run table shown in a terminal until the panel lands.
 - `system.py`: `caffeinate` and notifications via subprocess.
 
 ## Core types
@@ -141,13 +141,7 @@ Adapters:
 - `engines/systemone_http.py`: future. Posts the same request to any
   System One endpoint: Jev's hosted API, or clef served by SGLang.
 
-Config could pick the engine; whether v1 needs this is #7's call:
-
-```toml
-[engine]
-kind = "clef-local"          # later: "systemone-http"
-model = "Cloudflare/clef"
-```
+v1 has no engine setting: `run` always uses clef-local (A-fixed-engine).
 
 Switching engines has three consequences the design accounts for:
 
@@ -157,9 +151,9 @@ Switching engines has three consequences the design accounts for:
 - **Audit.** Each run log line records the engine `name`, so `undo` and
   later analysis know which engine decided.
 - **Privacy.** A hosted engine such as Jev sends email content off the
-  machine, which R-local-only and C-local-only forbid. `cli.py` refuses an
-  engine with `runs_locally = False`. Allowing one needs those rules
-  amended first.
+  machine, which R-local-only and C-local-only forbid. `runner.run`
+  refuses an engine with `runs_locally = False` (A-run-events). Allowing
+  one needs those rules amended first.
 
 ## Gmail integration
 
@@ -225,8 +219,6 @@ New runtime dependencies, each with its reason (C-few-dependencies):
 - Should a remote engine ever be allowed, for example Jev with an
   explicit opt-in? That is a product and constitution change, not an
   architecture one.
-- Should the config file default to the state directory instead of the
-  current directory?
 
 ## Decisions
 
@@ -255,3 +247,11 @@ Accepted items move here with an `A-<slug>` ID.
   `errors.py`. The CLI entry point prints any `UserError` as
   `error: <message>` and exits 1, or shows the traceback with `--debug`,
   so commands raise rather than handle reporting themselves.
+- A-config-location: `setup` and `run` read `inbox-sorter.toml` from the
+  current directory; `--config PATH` overrides it
+  (`config.resolve_config_path`).
+- A-fixed-engine: v1 has no `[engine]` table; `run` always builds
+  `make_engine("clef-local")`.
+- A-run-events: `runner.run` yields `RunEvent`s for any reporter. It lists
+  IDs first, so `RunStarted` has the total. Only a 404 fails one message;
+  other Gmail errors end the run. It refuses a non-local engine.

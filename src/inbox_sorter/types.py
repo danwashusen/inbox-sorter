@@ -7,6 +7,7 @@ from dataclasses import dataclass
 SORTER_PREFIX = "Sorter/"
 NEEDS_REPLY_LABEL = SORTER_PREFIX + "Needs reply"
 TODAY_LABEL = SORTER_PREFIX + "Today"
+LOW_CONFIDENCE_LABEL = SORTER_PREFIX + "_low-confidence"
 
 # Gmail's system labels; each name is also its ID. Setup skips them
 # (prd.md §Setup), so no category may use one.
