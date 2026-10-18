@@ -112,10 +112,25 @@ body is ever printed.
 ## Setup wizard
 
 `setup` walks through labels one at a time. Each step shows the label,
-its message count and a short table of recent senders and subjects.
-Choices use arrow-key menus with sensible defaults, so Enter accepts the
-common answer. The accuracy report at the end uses the same category bars
-as the run dashboard.
+its message count and a short table of up to 10 recent senders and
+subjects, cut to the dry-run table's widths. Choices use arrow-key menus
+with sensible defaults, so Enter accepts the common answer:
+
+- Use the label as a category: yes.
+- Description: the label name. A blank one is asked again.
+- Actions: label only, picked from label; label and mark read; label and
+  archive; or all three.
+- `min_confidence`: 0.0 for label only, 0.85 when the actions archive or
+  mark read. A value that is not a number from 0 to 1 is asked again.
+- Add a new category: no.
+
+Without a terminal, or with `--plain` or `--json`, `setup` asks the same
+questions as line prompts on stdin: `[Y/n]` confirms, `[<default>]` text
+and numbered choices. Enter takes the default. If input ends early, or on
+Ctrl-C, `setup` writes nothing and exits 1.
+
+The accuracy report at the end uses the same category bars as the run
+dashboard.
 
 ## Building trust
 
@@ -151,6 +166,9 @@ Each requirement has a stable slug ID, as in the product requirements.
 - R-dry-run-limit: `--limit N` caps any run, so a dry run can sample N
   emails.
 - R-monochrome-safe: Every colour is paired with text or an icon.
+- R-setup-plain-prompts: Without a terminal, or with `--plain` or
+  `--json`, `setup` asks the same questions as line prompts on stdin;
+  Enter takes the default; input that ends early writes nothing.
 
 ## Success metrics
 

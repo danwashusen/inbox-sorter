@@ -9,14 +9,17 @@ from typing import Annotated
 import typer
 
 from inbox_sorter import runner
-from inbox_sorter.config import ConfigError, load_config, resolve_config_path
+from inbox_sorter.config import ConfigError, load_config, resolve_config_path, write_config
 from inbox_sorter.engines import make_engine
 from inbox_sorter.errors import UserError, error_reason
 from inbox_sorter.gmail import GmailMailbox
 from inbox_sorter.questions import build_questions
+# Not `from inbox_sorter import setup`: the setup command below would shadow it.
+from inbox_sorter.setup import run_setup
 from inbox_sorter.storage import state_dir
 from inbox_sorter.ui.plain import PlainReporter
-from inbox_sorter.ui.table import TableReporter
+from inbox_sorter.ui.prompts import LinePrompter, MenuPrompter
+from inbox_sorter.ui.table import TableReporter, one_line
 
 # Plain-text help and errors; Rich is reserved for the run dashboard.
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False, rich_markup_mode=None)
@@ -92,6 +95,44 @@ def run(
             report(event)
     finally:
         engine.close()
+
+
+@app.command()
+def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
+    """Build the config from your Gmail labels. Reads Gmail only; writes only the config file."""
+    opts: CliOptions = ctx.obj
+    path = resolve_config_path(config)
+    # An invalid existing config stops setup before sign-in or any prompt.
+    existing = load_config(path) if path.exists() else None
+    with redirect_stdout(sys.stderr):  # the OAuth prompt prints (C-plain-output)
+        mailbox = GmailMailbox.connect(state_dir())
+
+    # Menus need a terminal on stdin as well as stdout; otherwise ask line by line.
+    prompter = (
+        MenuPrompter(sys.stdout)
+        if not opts.plain and sys.stdin.isatty()
+        else LinePrompter(sys.stdin, sys.stdout)
+    )
+    result = run_setup(mailbox, prompter, existing)
+    if not result.changed:
+        if existing is None:
+            print("no categories accepted; nothing was written")
+        else:
+            print(f"{path} is up to date; nothing was written")
+        return
+
+    write_config(path, result.config, existing)
+    print(
+        f"wrote {path}: {len(result.added)} added, {len(result.disabled)} disabled, "
+        f"{result.unchanged} unchanged"
+    )
+    for category in result.added:
+        print(f"+ {category.id} → {one_line(category.gmail_label)}")
+    labels = {category.id: category.gmail_label for category in result.config.categories}
+    for category_id in result.disabled:
+        print(f"- {category_id} (label {one_line(labels[category_id])} was deleted)")
+    if not any(category.enabled for category in result.config.categories):
+        print("note: no category is enabled; run refuses this config until one is")
 
 
 def main() -> None:

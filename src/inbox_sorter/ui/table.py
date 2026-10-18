@@ -55,7 +55,7 @@ class TableReporter:
                 ]
                 self._write(_row(cells, planned_actions(decision)))
             case MessageFailed():
-                self._write(f"{event.message_id}{GAP}failed: {_one_line(event.error)}")
+                self._write(f"{event.message_id}{GAP}failed: {one_line(event.error)}")
             case RunFinished():
                 self._write(
                     f"Dry run finished: {event.decided} planned, {event.failed} failed. "
@@ -67,13 +67,13 @@ class TableReporter:
 
 
 def _row(cells: list[str], rest: str) -> str:
-    fitted = [_fit(cell, width) for cell, (_, width) in zip(cells, COLUMNS, strict=True)]
+    fitted = [fit(cell, width) for cell, (_, width) in zip(cells, COLUMNS, strict=True)]
     return GAP.join([*fitted, rest]).rstrip()
 
 
-def _fit(text: str, width: int) -> str:
+def fit(text: str, width: int) -> str:
     """One line, cut with "…" to ``width`` terminal cells and padded to it."""
-    text = _one_line(text)
+    text = one_line(text)
     if _cells(text) > width:
         while _cells(text) > width - 1:
             text = text[:-1]
@@ -86,7 +86,7 @@ def _cells(text: str) -> int:
     return sum(2 if unicodedata.east_asian_width(char) in "WF" else 1 for char in text)
 
 
-def _one_line(text: str) -> str:
+def one_line(text: str) -> str:
     """Fold whitespace, and show other unsafe characters as "?".
 
     Headers come from senders, so a raw escape sequence could restyle or

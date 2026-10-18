@@ -1,7 +1,8 @@
 """Load and validate inbox-sorter.toml into typed settings."""
 
+import os
 import tomllib
-from dataclasses import dataclass, fields
+from dataclasses import astuple, dataclass, fields
 from pathlib import Path
 from typing import Any, Literal, get_args
 
@@ -93,7 +94,7 @@ def load_config(path: Path) -> Config:
     except FileNotFoundError:
         raise ConfigError(
             f"{path}: config file not found; "
-            "create it (see docs/prd.md §Configuration) or pass --config PATH"
+            "run `inbox-sorter setup` to create it or pass --config PATH"
         )
     except OSError as error:
         raise ConfigError(f"{path}: cannot read the config file: {error_reason(error)}")
@@ -135,6 +136,90 @@ def load_config(path: Path) -> Config:
         flags=_settings(FlagSettings, data, "flags", path),
         categories=categories,
     )
+
+
+def render_config(config: Config) -> str:
+    """The config as TOML that load_config reads back equal; no comments (A-config-writer)."""
+    lines: list[str] = []
+    for table, settings in (("run", config.run), ("flags", config.flags)):
+        lines.append(f"[{table}]")
+        lines += [
+            f"{field.name} = {_toml(value)}"
+            for field, value in zip(fields(settings), astuple(settings), strict=True)
+        ]
+        lines.append("")
+    for category in config.categories:
+        lines.append("[[category]]")
+        lines += [f"{key} = {_toml(getattr(category, key))}" for key in CATEGORY_KEYS]
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_config(path: Path, config: Config, previous: Config | None) -> None:
+    """Replace the config at ``path`` with ``config``; the only way the config is written.
+
+    Refuses when the file changed since ``previous`` was loaded from it (or
+    appeared, when ``previous`` is None). The text is written to a temp file
+    next to ``path`` and read back with load_config before it replaces the file.
+    """
+    changed = ConfigError(f"{path} changed while setup ran; nothing was written; run setup again")
+    if previous is None:
+        if path.exists():
+            raise changed
+    else:
+        try:
+            current = load_config(path)
+        except ConfigError:
+            raise changed from None
+        if current != previous:
+            raise changed
+
+    temp = path.with_name(f".{path.name}.tmp")
+    try:
+        mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
+        temp.write_text(render_config(config), encoding="utf-8")
+        os.chmod(temp, mode)
+        try:
+            written = load_config(temp)
+        except ConfigError as error:
+            raise ConfigError(f"{path}: the rendered config does not load: {error}") from error
+        if written != config:
+            raise ConfigError(f"{path}: the rendered config does not read back equal")
+        os.replace(temp, path)
+    except OSError as error:
+        raise ConfigError(f"{path}: cannot write the config file: {error_reason(error)}") from error
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _toml(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return repr(value)
+    if isinstance(value, tuple):
+        return "[" + ", ".join(_toml(item) for item in value) + "]"
+    return '"' + "".join(_toml_char(char) for char in value) + '"'
+
+
+# TOML basic-string escapes; any other control character or DEL becomes \uXXXX.
+TOML_ESCAPES = {
+    "\\": "\\\\",
+    '"': '\\"',
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+}
+
+
+def _toml_char(char: str) -> str:
+    if char in TOML_ESCAPES:
+        return TOML_ESCAPES[char]
+    if ord(char) < 0x20 or ord(char) == 0x7F:
+        return f"\\u{ord(char):04X}"
+    return char
 
 
 def _settings[T](cls: type[T], data: dict[str, Any], table: str, path: Path) -> T:
@@ -185,31 +270,43 @@ def _category(raw: dict[str, Any], position: int, path: Path) -> Category:
         raise ConfigError(
             f"{where}: unknown source {source!r}; expected one of {', '.join(SOURCES)}"
         )
-    label = values["gmail_label"]
+    category = Category(actions=tuple(actions), **values)
+    try:
+        check_category(category)
+    except ConfigError as error:
+        raise ConfigError(f"{where}: {error}") from error
+    return category
+
+
+def check_category(category: Category) -> None:
+    """Check a category's label rules and min_confidence; raises ConfigError without a path.
+
+    ``load_config`` checks types first; ``setup`` calls this on each answer.
+    """
+    low, high = RANGES["category.min_confidence"]
+    if not low <= category.min_confidence <= high:
+        raise ConfigError(
+            f"min_confidence must be between {low} and {high}, got {category.min_confidence!r}"
+        )
+    label = category.gmail_label
     if label in SYSTEM_LABELS:  # setup never imports these (prd.md §Setup step 1)
-        raise ConfigError(f"{where}: gmail_label {label!r} is a Gmail system label, not a category")
+        raise ConfigError(f"gmail_label {label!r} is a Gmail system label, not a category")
     # Sorter/ holds only labels the tool owns (R-label-placement).
     under_sorter = label.startswith(SORTER_PREFIX)
-    if source == "created":
+    if category.source == "created":
         if not under_sorter:
-            raise ConfigError(
-                f"{where}: a created category's gmail_label must start with {SORTER_PREFIX!r}"
-            )
+            raise ConfigError(f"a created category's gmail_label must start with {SORTER_PREFIX!r}")
         name = label[len(SORTER_PREFIX) :]
         if not name:
             raise ConfigError(
-                f"{where}: a created category's gmail_label needs a name after {SORTER_PREFIX!r}"
+                f"a created category's gmail_label needs a name after {SORTER_PREFIX!r}"
             )
         if name.startswith("_") or label in (NEEDS_REPLY_LABEL, TODAY_LABEL):
-            raise ConfigError(
-                f"{where}: gmail_label {label!r} is reserved for inbox-sorter's own labels"
-            )
-    if source == "imported" and under_sorter:
+            raise ConfigError(f"gmail_label {label!r} is reserved for inbox-sorter's own labels")
+    if category.source == "imported" and under_sorter:
         raise ConfigError(
-            f"{where}: an imported category's gmail_label must not start with {SORTER_PREFIX!r}"
+            f"an imported category's gmail_label must not start with {SORTER_PREFIX!r}"
         )
-
-    return Category(actions=tuple(actions), **values)
 
 
 def _checked(name: str, value: Any, kind: type, where: str) -> Any:
