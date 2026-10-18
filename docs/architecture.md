@@ -38,17 +38,24 @@ engine, so tests swap both for fakes and clef can be replaced later.
 All under `src/inbox_sorter/`. Only `cli.py` and `ui/` may import Typer,
 Rich or questionary (C-thin-cli).
 
-Built so far: `engine.py`, `engines/` and `state.py`, marked **(exists)**.
-Every other module is planned and does not exist yet.
+Built so far: `engine.py`, `engines/`, `state.py`, `types.py`,
+`errors.py`, `storage.py`, `config.py`, `gmail.py` and `cli.py`, marked
+**(exists)**. Every other module is planned and does not exist yet.
 
-- `cli.py`: the `setup`, `run` and `undo` commands. Parses flags, builds
-  the real Gmail client and decision engine, picks a reporter, maps errors
-  to exit codes (C-exit-codes).
-- `config.py`: loads and validates `inbox-sorter.toml` into typed
-  dataclasses; writes it for `setup`.
-- `gmail.py`: a `Mailbox` protocol plus the Gmail API implementation.
-  Lists unprocessed inbox IDs, fetches metadata or plain-text body, manages
-  labels, and applies one modify call per message.
+- `cli.py` **(exists)**: the `setup`, `run` and `undo` commands. Parses
+  flags, builds the real Gmail client and decision engine, picks a
+  reporter, maps errors to exit codes (C-exit-codes). So far it has only
+  the shared `--plain` and `--debug` options.
+- `config.py` **(exists)**: loads and validates `inbox-sorter.toml` into
+  typed dataclasses; writes it for `setup` (not yet built).
+- `gmail.py` **(exists)**: a `Mailbox` protocol plus the Gmail API
+  implementation. Lists unprocessed inbox IDs, fetches metadata or
+  plain-text body, manages labels, and applies one modify call per
+  message. So far it has the read methods only.
+- `types.py` **(exists)**: the core types below.
+- `errors.py` **(exists)**: `UserError`, the base of every expected
+  failure the CLI reports as one line.
+- `storage.py` **(exists)**: finds and creates the state directory.
 - `engine.py` **(exists)**: the `DecisionEngine` protocol and
   engine-neutral request and answer types.
 - `engines/` **(exists)**: one adapter per engine, chosen by
@@ -75,12 +82,12 @@ Every other module is planned and does not exist yet.
 Plain frozen dataclasses in `types.py`, shared by every module.
 
 - `Email`: id, sender, subject, snippet, label IDs, and body when fetched.
-- `Answers`: category probabilities, `needs_reply` probability and
-  `urgency` score, in engine-neutral form.
-- `Decision`: category, labels to add, labels to remove, and whether it
-  is low confidence or used the body.
-- `RunEvent`: started, decided, retrying, error and finished variants,
-  carrying the counts the dashboard needs.
+- `Answers` (planned): category probabilities, `needs_reply` probability
+  and `urgency` score, in engine-neutral form.
+- `Decision`: message ID, category, confidence, the two flags, labels to
+  add and remove, and whether it is low confidence or used the body.
+- `RunEvent`: `RunStarted`, `MessageDecided`, `MessageFailed` and
+  `RunFinished` so far; a retrying variant comes with retries.
 
 ## Run loop
 
@@ -134,7 +141,7 @@ Adapters:
 - `engines/systemone_http.py`: future. Posts the same request to any
   System One endpoint: Jev's hosted API, or clef served by SGLang.
 
-Config picks the engine:
+Config could pick the engine; whether v1 needs this is #7's call:
 
 ```toml
 [engine]
@@ -181,8 +188,12 @@ can be versioned separately from state.
 Per the constitution's testing rules, unit tests never load clef or call
 Gmail (C-fast-tests).
 
-- `FakeMailbox` holds messages and labels in memory and records modify
-  calls.
+- `FakeMailbox` **(exists)**, in `tests/fake_mailbox.py`, holds messages,
+  bodies and labels in memory; no config picks a mailbox, so it is
+  test-only.
+- `tests/mailbox_contract.py` **(exists)** checks any `Mailbox` against the
+  read contract. It runs on `FakeMailbox` by default, and on the real
+  inbox with `uv run pytest -m gmail`.
 - `FakeEngine` **(exists)** returns scripted or uniform answers and
   records every request.
 - Most tests target `triage`, `config`, `setup`, `runlog` and the runner
@@ -219,4 +230,28 @@ New runtime dependencies, each with its reason (C-few-dependencies):
 
 ## Decisions
 
-None yet. Accepted items move here with an `A-<slug>` ID.
+Accepted items move here with an `A-<slug>` ID.
+
+- A-mailbox-seam: Gmail access goes through the `Mailbox` protocol in
+  `gmail.py`, with `GmailMailbox` and a test-only `FakeMailbox`. Reads
+  are `list_unprocessed`, `list_by_label`, `get_message`, `get_body` and
+  `list_labels`; write methods come with the story that applies
+  decisions. Sign-in and reads raise `MailboxError`, never a Google
+  exception, with any HTTP status. The Google libraries are imported only
+  inside the functions that call Gmail, so the core never loads them.
+- A-core-types: `Email`, `Decision` and the `RunEvent` variants
+  `RunStarted`, `MessageDecided`, `MessageFailed` and `RunFinished` are
+  frozen dataclasses in `types.py`. `Decision` holds label names,
+  resolved to IDs when applied. `RunEvent` variants are only added.
+- A-typed-config: `load_config` in `config.py` reads `inbox-sorter.toml`
+  with the standard `tomllib` into frozen dataclasses. Omitted `[run]`
+  and `[flags]` keys take their defaults; every category key is
+  required, and an unknown key or table is an error.
+- A-state-dir: State lives in
+  `~/Library/Application Support/inbox-sorter/`, created with mode
+  `0o700` by `storage.state_dir`. The OAuth token is written with mode
+  `0o600`.
+- A-error-reporting: Expected failures subclass `UserError` in
+  `errors.py`. The CLI entry point prints any `UserError` as
+  `error: <message>` and exits 1, or shows the traceback with `--debug`,
+  so commands raise rather than handle reporting themselves.

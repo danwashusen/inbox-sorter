@@ -131,7 +131,9 @@ actions = ["label"]
 min_confidence = 0.0
 ```
 
-Disabled categories are not offered to clef.
+Disabled categories are not offered to clef. An omitted `[run]` or
+`[flags]` table, or an omitted key in one, takes the value shown above;
+every `[[category]]` key is required.
 
 ## Requirements
 
