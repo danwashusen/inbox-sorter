@@ -19,7 +19,7 @@ talks to the outside world through two seams, Gmail and the decision
 engine, so tests swap both for fakes and clef can be replaced later.
 
 ```text
-            cli.py  (Typer, questionary)          ui/  (Rich dashboard, plain)
+            cli.py  (Typer)                       ui/  (Rich dashboard, plain, questionary)
                │                                     ▲
                ▼                                     │ RunEvent
    setup.py   runner.py ──── triage.py ─────────────┘
@@ -42,10 +42,10 @@ Modules marked **(exists)** are built. The others are planned.
 
 - `cli.py` **(exists)**: the `setup`, `run` and `undo` commands. Parses
   flags, builds the real Gmail client and decision engine, picks a
-  reporter, maps errors to exit codes (C-exit-codes). So far: a dry-run
-  `run` and the shared `--plain`, `--json` and `--debug` options.
+  reporter, maps errors to exit codes (C-exit-codes). So far: `setup`, a
+  dry-run `run` and the shared `--plain`, `--json` and `--debug` options.
 - `config.py` **(exists)**: loads and validates `inbox-sorter.toml` into
-  typed dataclasses; writes it for `setup` (not yet built).
+  typed dataclasses; writes it for `setup` (A-config-writer).
 - `gmail.py` **(exists)**: a `Mailbox` protocol plus the Gmail API
   implementation. Lists unprocessed inbox IDs, fetches metadata or
   plain-text body, manages labels, and applies one modify call per
@@ -70,11 +70,10 @@ Modules marked **(exists)** are built. The others are planned.
   messages. So far it dry-runs: no apply, log or stop flag.
 - `runlog.py`: appends one JSON line per decision; reads a run back for
   `undo`.
-- `setup.py`: label filtering, re-sync rules and the accuracy report,
-  as pure functions the CLI prompts around.
+- `setup.py` **(exists)**: re-sync and the wizard; accuracy report to come.
 - `ui/dashboard.py`: renders `RunEvent`s as the live panel.
-- `ui/plain.py` **(exists)** and `ui/table.py` **(exists)**: plain lines,
-  and the dry-run table shown in a terminal until the panel lands.
+- `ui/plain.py`, `ui/table.py` and `ui/prompts.py` **(exist)**: plain
+  lines, the dry-run table shown until the panel lands, `setup` prompts.
 - `system.py`: `caffeinate` and notifications via subprocess.
 
 ## Core types
@@ -211,8 +210,6 @@ New runtime dependencies, each with its reason (C-few-dependencies):
 
 - Should `undo` also remove `Sorter/_processed`, so undone mail is sorted
   again next run, or keep it so undone mail stays put?
-- Writing TOML needs `tomli-w` or a hand-written template. Is one small
-  dependency worth it?
 - Would batching several emails per clef forward pass raise throughput
   enough to justify the extra code? Measure before deciding. If so,
   `DecisionEngine` gains a `decide_many`.
@@ -255,3 +252,6 @@ Accepted items move here with an `A-<slug>` ID.
 - A-run-events: `runner.run` yields `RunEvent`s for any reporter. It lists
   IDs first, so `RunStarted` has the total. Only a 404 fails one message;
   other Gmail errors end the run. It refuses a non-local engine.
+- A-config-writer: `config.write_config` rewrites the file, no comments,
+  via a temp file that must load back equal; it refuses changed values.
+- A-setup-prompter: `run_setup` asks through a `Prompter` (`ui/prompts.py`).

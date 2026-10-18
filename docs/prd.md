@@ -93,9 +93,14 @@ writes `inbox-sorter.toml`. It is the only command that edits the config.
    Report per-category accuracy and the most common confusions.
 6. Write the config and print a summary.
 
-Re-running `setup` keeps existing entries untouched. It walks through new
-Gmail labels only, and sets `enabled = false` on categories whose label
-was deleted.
+A label declined in step 2 is offered again the next time `setup` runs.
+
+Re-running `setup` keeps existing entries' values untouched. It walks
+through new Gmail labels only, and sets `enabled = false` on imported
+categories whose label was deleted. A created category's label is made
+on first use (R-create-missing-labels), so a missing one disables
+nothing. A re-sync that changes anything rewrites the file
+without its comments.
 
 ## Configuration
 
@@ -138,6 +143,9 @@ Disabled categories are not offered to clef. An omitted `[run]` or
 `[flags]` table, or an omitted key in one, takes the value shown above;
 every `[[category]]` key is required.
 
+`setup` rewrites the whole file from its values, so comments are not
+kept. When nothing changes it leaves the file as is.
+
 ## Requirements
 
 Each requirement has a stable slug ID. Reference it as plain text, e.g.
@@ -176,8 +184,9 @@ R-dry-run-default.
   and `min_confidence`, then writes the config.
 - R-setup-accuracy: `setup` reports per-category accuracy on a sample of
   already-labelled mail.
-- R-setup-resync: Re-running `setup` never overwrites existing entries; it
-  offers new labels and disables deleted ones.
+- R-setup-resync: Re-running `setup` never changes existing entries' values;
+  it offers new labels and disables imported categories whose label was
+  deleted.
 - R-setup-read-only: `setup` only reads Gmail; it never changes labels or
   messages.
 

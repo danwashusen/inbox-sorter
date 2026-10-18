@@ -8,6 +8,7 @@ dependencies = [
     "google-auth-oauthlib>=1.5.0",
     "huggingface-hub>=2.2.0",
     "pillow>=13.0.0",
+    "questionary>=2.1.1",
     "safetensors>=0.8.0",
     "torch>=2.14.1",
     "torchvision>=0.29.1",
