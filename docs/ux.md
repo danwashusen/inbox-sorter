@@ -87,6 +87,28 @@ When output is not a terminal, or with `--plain`, the run prints one line
 per decision and a periodic progress line instead of the panel. The
 format is stable so it can be piped to a file or `grep`.
 
+The shared options go before the command: `inbox-sorter --plain run`.
+Each line is a logfmt record: its name, then `key=value` pairs in a fixed
+order.
+
+- `started run=<run-id> mode=dry-run engine=<engine> total=<n>`
+- `decided id=<message-id> category=<id> confidence=<0.00> reply=<bool>
+  today=<bool> low=<bool> body=<bool> add=<labels> remove=<labels>
+  sender=<sender> subject=<subject>`, on one line
+- `failed id=<message-id> error=<text>`
+- `progress done=<n> total=<n>`, after every 10th message except the last
+- `finished run=<run-id> decided=<n> failed=<n>`
+
+A value is double-quoted when it is empty or holds a space, `"`, `=`, `\`
+or a control character. Inside quotes `\`, `"`, a newline and a tab are
+escaped as `\\`, `\"`, `\n` and `\t`, so a record never spans lines. A
+carriage return becomes `\r`, and any other control character, line
+separator or bidi control `\uXXXX`, in JSON lines too.
+
+Label lists are joined with `,`. `--json` prints the same records as JSON
+lines, with the record name in `"event"`, and implies `--plain`. No email
+body is ever printed.
+
 ## Setup wizard
 
 `setup` walks through labels one at a time. Each step shows the label,
@@ -153,3 +175,6 @@ Settled on 2026-10-18.
   summary, and questionary for arrow-key prompts in `setup`. Keep-awake and
   notifications use `caffeinate` and `osascript` as subprocesses, with no
   extra dependency.
+- **Plain format.** Logfmt records by default and JSON lines with
+  `--json`, with the same record names and keys, settled on 2026-10-18
+  (R-plain-mode).

@@ -102,11 +102,14 @@ was deleted.
 Categories live in `inbox-sorter.toml`. The description is the text clef
 classifies against, so tuning it is the main way to fix wrong answers.
 
+`setup` and `run` read `inbox-sorter.toml` from the current directory. Pass
+`--config PATH` to either command to read another file instead.
+
 ```toml
 [run]
 max_messages = 50
 dry_run = true # default; pass --apply to change Gmail
-body_chars = 2000 # body text sent on the low-confidence retry
+body_chars = 2000 # body text sent on the low-confidence retry; 0 turns the retry off
 
 [flags]
 needs_reply_min = 0.7 # probability

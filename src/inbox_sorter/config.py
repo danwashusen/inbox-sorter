@@ -52,6 +52,9 @@ class Config:
 
 TABLES = ("run", "flags", "category")
 
+# Read from the current directory unless --config overrides it (A-config-location).
+CONFIG_FILENAME = "inbox-sorter.toml"
+
 # Every [[category]] key is required. "actions" is checked on its own.
 CATEGORY_KEYS: dict[str, type] = {
     "id": str,
@@ -75,13 +78,23 @@ RANGES: dict[str, tuple[float, float | None]] = {
 }
 
 
+def resolve_config_path(override: Path | None, cwd: Path | None = None) -> Path:
+    """The --config path when given, else inbox-sorter.toml in the current directory."""
+    if override is not None:
+        return override.expanduser()
+    return (cwd or Path.cwd()) / CONFIG_FILENAME
+
+
 def load_config(path: Path) -> Config:
     """Read the config at ``path``. Raises ConfigError naming the cause."""
     try:
         with path.open("rb") as file:
             data = tomllib.load(file)
     except FileNotFoundError:
-        raise ConfigError(f"{path}: config file not found; run `inbox-sorter setup` to create it")
+        raise ConfigError(
+            f"{path}: config file not found; "
+            "create it (see docs/prd.md §Configuration) or pass --config PATH"
+        )
     except OSError as error:
         raise ConfigError(f"{path}: cannot read the config file: {error_reason(error)}")
     except tomllib.TOMLDecodeError as error:
@@ -97,7 +110,9 @@ def load_config(path: Path) -> Config:
     if not isinstance(raw_categories, list) or not all(isinstance(c, dict) for c in raw_categories):
         raise ConfigError(f"{path}: category must be written as [[category]] tables")
     if not raw_categories:
-        raise ConfigError(f"{path}: no [[category]] tables; run `inbox-sorter setup` to add them")
+        raise ConfigError(
+            f"{path}: no [[category]] tables; add them as described in docs/prd.md §Configuration"
+        )
 
     categories = tuple(
         _category(raw, position, path) for position, raw in enumerate(raw_categories, start=1)

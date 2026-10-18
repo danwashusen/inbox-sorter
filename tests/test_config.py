@@ -1,12 +1,16 @@
+from pathlib import Path
+
 import pytest
 
 from inbox_sorter.config import (
+    CONFIG_FILENAME,
     Category,
     Config,
     ConfigError,
     FlagSettings,
     RunSettings,
     load_config,
+    resolve_config_path,
 )
 
 # The example from PRD §Configuration.
@@ -14,7 +18,7 @@ PRD_EXAMPLE = """
 [run]
 max_messages = 50
 dry_run = true # default; pass --apply to change Gmail
-body_chars = 2000 # body text sent on the low-confidence retry
+body_chars = 2000 # body text sent on the low-confidence retry; 0 turns the retry off
 
 [flags]
 needs_reply_min = 0.7 # probability
@@ -132,14 +136,31 @@ def test_the_processed_marker_is_reserved(tmp_path):
         load(tmp_path, ALERTS.replace('"Sorter/Alerts"', f'"{PROCESSED_LABEL}"'))
 
 
-def test_missing_file_names_the_path_and_setup(tmp_path):
+def test_missing_file_names_the_path_and_the_override(tmp_path):
     path = tmp_path / "missing.toml"
 
     with pytest.raises(ConfigError) as caught:
         load_config(path)
 
     assert str(path) in str(caught.value)
-    assert "inbox-sorter setup" in str(caught.value)
+    assert "--config PATH" in str(caught.value)
+
+
+def test_default_path_is_the_config_in_the_current_directory(tmp_path):
+    assert CONFIG_FILENAME == "inbox-sorter.toml"
+    assert resolve_config_path(None, cwd=tmp_path) == tmp_path / "inbox-sorter.toml"
+
+
+def test_override_is_used_with_home_expanded(tmp_path):
+    assert resolve_config_path(tmp_path / "other.toml", cwd=tmp_path) == tmp_path / "other.toml"
+    assert resolve_config_path(Path("~/sorter.toml")) == Path.home() / "sorter.toml"
+
+
+def test_missing_default_config_names_its_absolute_path(tmp_path):
+    with pytest.raises(ConfigError) as caught:
+        load_config(resolve_config_path(None, cwd=tmp_path))
+
+    assert str(caught.value).startswith(f"{tmp_path / 'inbox-sorter.toml'}: config file not found")
 
 
 @pytest.mark.parametrize(
