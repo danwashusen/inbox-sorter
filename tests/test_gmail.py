@@ -198,7 +198,9 @@ def test_fake_mailbox_modify_adds_and_removes_labels():
     assert mailbox.modify_calls == [("m1", ("Label_2",), ("INBOX", "UNREAD"))]
 
 
-@pytest.mark.parametrize("message_id, add, status", [("missing", [], 404), ("m1", ["Label_7"], 400)])
+@pytest.mark.parametrize(
+    "message_id, add, status", [("missing", [], 404), ("m1", ["Label_7"], 400)]
+)
 def test_fake_mailbox_modify_refuses_an_unknown_message_or_label(message_id, add, status):
     mailbox = FakeMailbox([email("m1", "INBOX")], labels=[INBOX])
 
@@ -443,7 +445,11 @@ def test_create_label_sends_a_visible_user_label():
 
 def test_label_ids_lists_labels_once_without_reading_each():
     service = StubService(
-        {"labels.list": {"labels": [{"id": "INBOX", "name": "INBOX"}, {"id": "L2", "name": "Bills"}]}}
+        {
+            "labels.list": {
+                "labels": [{"id": "INBOX", "name": "INBOX"}, {"id": "L2", "name": "Bills"}]
+            }
+        }
     )
 
     assert GmailMailbox(service).label_ids() == {"INBOX": "INBOX", "Bills": "L2"}

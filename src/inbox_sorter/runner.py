@@ -1,6 +1,7 @@
 """The run loop: list unprocessed mail, decide each message, and yield RunEvents.
 
-It changes nothing in Gmail; #10 applies the decisions it yields.
+A dry run changes nothing. An apply run logs each decision, then makes
+one Gmail change per message (C-dry-run-first).
 """
 
 from collections.abc import Iterator
@@ -10,7 +11,8 @@ from datetime import UTC, datetime
 from inbox_sorter.config import Config
 from inbox_sorter.engine import DecisionEngine, DecisionRequest, Question
 from inbox_sorter.errors import UserError
-from inbox_sorter.gmail import MAX_PAGE_SIZE, Mailbox, MailboxError
+from inbox_sorter.gmail import MAX_PAGE_SIZE, LabelResolver, Mailbox, MailboxError
+from inbox_sorter.runlog import RunLog
 from inbox_sorter.state import message_state
 from inbox_sorter.triage import decide, needs_body
 from inbox_sorter.types import (
@@ -37,8 +39,16 @@ def run(
     *,
     limit: int | None,
     run_id: str,
+    apply: bool = False,
+    log: RunLog | None = None,
 ) -> Iterator[RunEvent]:
-    """Dry-run up to ``limit`` (else ``max_messages``) unprocessed inbox messages."""
+    """Decide up to ``limit`` (else ``max_messages``) unprocessed inbox messages.
+
+    With ``apply``, each decision is appended to ``log`` and then applied
+    before it is yielded; otherwise nothing is written anywhere.
+    """
+    if apply and log is None:
+        raise ValueError("an apply run needs a run log")
     require_local(engine)
 
     cap = limit if limit is not None else config.run.max_messages
@@ -52,11 +62,14 @@ def run(
         if page_token is None:
             break
 
-    yield RunStarted(run_id, dry_run=True, engine=engine.name, total=len(ids))
+    yield RunStarted(run_id, dry_run=not apply, engine=engine.name, total=len(ids))
+    resolver = LabelResolver(mailbox) if apply else None
     decided = failed = 0
     for message_id in ids:
         try:
             email, decision = decide_message(mailbox, engine, config, questions, message_id)
+            if resolver is not None and log is not None:
+                _apply(mailbox, resolver, log, run_id, engine.name, email, decision)
         except MailboxError as error:
             if error.status != 404:  # only a message deleted since listing fails alone
                 raise
@@ -66,6 +79,29 @@ def run(
         decided += 1
         yield MessageDecided(email, decision)
     yield RunFinished(run_id, decided, failed)
+
+
+def _apply(
+    mailbox: Mailbox,
+    resolver: LabelResolver,
+    log: RunLog,
+    run_id: str,
+    engine: str,
+    email: Email,
+    decision: Decision,
+) -> None:
+    """Resolve labels, log the line, then make the message's one Gmail change.
+
+    Resolving first means a label that cannot be created ends the run before
+    the line exists. Only labels the message lacks are logged and added, so
+    undo never removes one the user applied.
+    """
+    resolved = {name: resolver.id_for(name) for name in decision.add_labels}
+    added = {
+        name: label_id for name, label_id in resolved.items() if label_id not in email.label_ids
+    }
+    log.append(run_id, engine, decision, added)
+    mailbox.modify(decision.message_id, tuple(added.values()), decision.remove_labels)
 
 
 def require_local(engine: DecisionEngine) -> None:
