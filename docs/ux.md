@@ -95,10 +95,10 @@ the run prints after the summary.
 
 ## Undo
 
-`inbox-sorter undo <run-id>` previews reversing one applied run from the
-run log, and never signs in. `--apply` removes the labels the run added,
-`Sorter/_processed` included, and adds back the `INBOX` and `UNREAD` it
-removed. Mail a later run logged again is skipped.
+`inbox-sorter undo <run-id>` previews reversing one applied run, without
+signing in. `--apply` removes the labels the run added, `Sorter/_processed`
+included, and restores `INBOX` and `UNREAD`. Mail a later run logged again
+is skipped. A Ctrl-C or Gmail error shows the counts and how to finish.
 
 1. `Undo · <DRY RUN|APPLY> · run <id> · <n> <to undo|undone> · <n> skipped`
 2. Label counts, skips by reason, then a closing hint such as `--apply`.
@@ -126,7 +126,7 @@ order.
   reply=<n> today=<n> low=<n> elapsed=<seconds>
   review=Sorter/_low-confidence`, last
 
-`undo` prints the log's skips, then one record per message (`gone` under
+`undo` writes the log's skips, then one record per message (`gone` under
 `--apply`), then a total; `--apply` adds the `progress` record:
 
 - `skipped id=<message-id> reason=<later-run|unchanged|gone>`
