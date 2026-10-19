@@ -165,7 +165,7 @@ def test_a_non_local_engine_is_refused_before_listing():
     assert mailbox.list_calls == 0
 
 
-def test_a_dry_run_changes_no_labels(tmp_path):
+def test_a_dry_run_changes_no_labels():
     emails = [make_email("m1"), make_email("m2", labels=("INBOX",))]
     mailbox = FakeMailbox(emails)
 
@@ -173,7 +173,6 @@ def test_a_dry_run_changes_no_labels(tmp_path):
 
     assert mailbox.emails == emails
     assert (mailbox.label_ids_calls, mailbox.created, mailbox.modify_calls) == (0, [], [])
-    assert list(tmp_path.iterdir()) == []
 
 
 # Apply runs
@@ -208,6 +207,25 @@ def test_an_apply_run_logs_and_adds_only_labels_the_message_lacks(tmp_path):
     [line] = log_lines(tmp_path / "runs.jsonl")
     assert (line["add"], line["add_ids"]) == ([PROCESSED_LABEL], ["Label_9"])
     assert mailbox.modify_calls == [("m1", ("Label_9",), ("INBOX", "UNREAD"))]
+
+
+def test_a_message_with_nothing_to_change_is_logged_but_not_modified(tmp_path):
+    class LaggingSearch(FakeMailbox):
+        """Lists a processed message, as Gmail search can just after it was labelled."""
+
+        def list_unprocessed(self, page_token=None, page_size=100):
+            return [email.id for email in self.emails], None
+
+    needs_reply = LabelInfo("Label_3", "Sorter/Needs reply", system=False, message_count=1)
+    email = make_email("m1", labels=("INBOX", "UNREAD", "Label_5", "Label_3", "Label_9"))
+    engine = FakeEngine(lambda request: answers(reply=0.9))  # flagged: stays in the inbox
+    mailbox = LaggingSearch([email], labels=[RECEIPTS, needs_reply, PROCESSED])
+
+    events = list(start(mailbox, engine, log=RunLog(tmp_path / "runs.jsonl")))
+
+    assert mailbox.modify_calls == []
+    assert [line["add"] for line in log_lines(tmp_path / "runs.jsonl")] == [[]]
+    assert events[-1] == RunFinished("r1", decided=1, failed=0)
 
 
 def test_a_failed_change_leaves_its_logged_message_unprocessed(tmp_path):

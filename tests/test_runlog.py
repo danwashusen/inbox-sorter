@@ -66,6 +66,16 @@ def test_append_writes_one_private_line_per_call_across_instances(tmp_path):
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
+def test_append_makes_an_existing_log_private(tmp_path):
+    path = tmp_path / "runs.jsonl"
+    path.write_text("")
+    path.chmod(0o644)
+
+    RunLog(path).append("r1", "fake", DECISION, ADDED)
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
 def test_an_unwritable_log_raises_a_run_log_error_naming_it(tmp_path):
     path = tmp_path / "missing" / "runs.jsonl"
 

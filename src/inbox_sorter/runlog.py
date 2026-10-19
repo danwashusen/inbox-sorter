@@ -60,6 +60,7 @@ class RunLog:
         line = log_line(run_id, engine, decision, added) + "\n"
         try:
             fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            os.fchmod(fd, 0o600)  # also tighten a log that already exists
             with os.fdopen(fd, "a", encoding="utf-8") as file:
                 file.write(line)
                 file.flush()

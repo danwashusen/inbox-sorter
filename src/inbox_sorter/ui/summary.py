@@ -112,7 +112,7 @@ def summary_records(summary: RunSummary, json_lines: bool) -> list[str]:
                 "reply": summary.needs_reply,
                 "today": summary.today,
                 "low": summary.low_confidence,
-                "elapsed": round(summary.elapsed),
+                "elapsed": int(summary.elapsed),  # whole seconds, as format_elapsed shows
                 "review": LOW_CONFIDENCE_LABEL,
             },
             json_lines,

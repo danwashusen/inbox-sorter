@@ -101,7 +101,8 @@ def _apply(
         name: label_id for name, label_id in resolved.items() if label_id not in email.label_ids
     }
     log.append(run_id, engine, decision, added)
-    mailbox.modify(decision.message_id, tuple(added.values()), decision.remove_labels)
+    if added or decision.remove_labels:  # Gmail refuses a change with nothing in it
+        mailbox.modify(decision.message_id, tuple(added.values()), decision.remove_labels)
 
 
 def require_local(engine: DecisionEngine) -> None:

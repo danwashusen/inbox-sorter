@@ -71,6 +71,26 @@ def test_apply_logs_each_decision_and_changes_gmail(tmp_path, monkeypatch):
     assert (summary["event"], summary["mode"], summary["decided"]) == ("summary", "apply", 2)
 
 
+def test_main_prints_the_summary_then_the_error_and_exits_1(tmp_path, monkeypatch, capsys):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    mailbox.fail_modify = {"m2"}
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(lambda state_dir: mailbox))
+    monkeypatch.setattr(cli, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(cli, "make_engine", lambda kind: FakeEngine(lambda request: answers()))
+    config = tmp_path / "inbox-sorter.toml"
+    config.write_text(CONFIG)
+    argv = ["inbox-sorter", "--json", "run", "--apply", "--config", str(config)]
+    monkeypatch.setattr(cli.sys, "argv", argv)
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main()
+
+    out, err = capsys.readouterr()
+    assert exited.value.code == 1
+    assert json.loads(out.splitlines()[-1])["event"] == "summary"
+    assert "error: modify failed for 'm2'" in err
+
+
 def test_a_fatal_error_mid_apply_still_prints_the_summary(tmp_path, monkeypatch):
     mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
     mailbox.fail_modify = {"m2"}

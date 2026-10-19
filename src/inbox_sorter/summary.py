@@ -45,6 +45,7 @@ class SummaryTally:
 
     def __init__(self, config: Config, clock: Callable[[], float] = time.monotonic) -> None:
         self._config = config
+        self._categories = {category.id: category for category in config.categories}
         self._clock = clock
         self._run: RunStarted | None = None
         self._start = 0.0
@@ -63,7 +64,7 @@ class SummaryTally:
                 self._run = event
                 self._start = self._clock()
             case MessageDecided(decision=decision):
-                category = next(c for c in self._config.categories if c.id == decision.category)
+                category = self._categories[decision.category]
                 counts = self._counts[category.id]
                 counts["messages"] += 1
                 counts["labelled"] += category.gmail_label in decision.add_labels

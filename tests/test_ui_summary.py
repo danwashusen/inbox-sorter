@@ -68,7 +68,7 @@ def test_summary_records_as_logfmt():
     assert summary_records(SUMMARY, json_lines=False) == [
         "total category=receipts label=Receipts messages=1544 labelled=1544 archived=1500 read=0",
         "summary run=20261019-140211 mode=apply decided=1544 failed=2 reply=3 today=1 low=7 "
-        "elapsed=126 review=Sorter/_low-confidence",
+        "elapsed=125 review=Sorter/_low-confidence",
     ]
 
 

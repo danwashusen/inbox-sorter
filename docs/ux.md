@@ -85,7 +85,7 @@ the run prints after the summary.
 1. `Summary · APPLY · <n> decided · <n> failed · elapsed 4h 34m`.
 2. One bar per category with mail, such as
    `receipts █████ 1,544  1,544 labelled, 1,500 archived`. Labelled counts
-   mail that has the category label after the run. A dry run says
+   mail given its category label, even mail that already had it. A dry run says
    `to label`, `to archive` and `to mark read`.
 3. `⚑ Needs reply <n>   ⏰ Today <n>   ? Low confidence <n>`.
 4. `Review low-confidence mail under Sorter/_low-confidence in Gmail.` A
