@@ -23,6 +23,7 @@ from inbox_sorter.stop import StopFlag, listen_for_stop, write_stderr
 from inbox_sorter.storage import state_dir
 from inbox_sorter.summary import RunSummary, SummaryTally
 from inbox_sorter.system import keep_awake, notify
+from inbox_sorter.types import RunStopped
 from inbox_sorter.ui.accuracy import (
     ACCURACY_STOPPED,
     CONFIG_KEPT,
@@ -44,7 +45,6 @@ from inbox_sorter.ui.undo import (
     undo_total_record,
 )
 # Not `from inbox_sorter import undo`: the undo command below would shadow it.
-from inbox_sorter.types import RunStopped
 from inbox_sorter.undo import UndoOutcome, UndoPlan, apply_undo, plan_undo
 
 # Plain-text help and errors; Rich is reserved for ui/ (the setup report and the run dashboard).

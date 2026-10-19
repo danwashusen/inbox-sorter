@@ -80,8 +80,9 @@ def run(
         page, page_token = yield from _retrying(
             lambda: mailbox.list_unprocessed(page_token, page_size=size), None, retry_delays
         )
-        # Mail arriving between pages shifts the list, so an ID can come back.
-        new = [message_id for message_id in page if message_id not in seen]
+        # Mail arriving between pages shifts the list, so an ID can come back;
+        # keep only an ID's first listing, on this page or an earlier one.
+        new = [message_id for message_id in dict.fromkeys(page) if message_id not in seen]
         ids.extend(new if cap is None else new[: cap - len(ids)])
         seen.update(new)
         if page_token is None:

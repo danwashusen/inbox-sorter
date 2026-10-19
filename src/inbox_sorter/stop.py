@@ -60,8 +60,8 @@ def interrupt_handler(
     def handle(signum: int, frame: FrameType | None) -> None:
         if flag.requested:  # by an earlier Ctrl-C or by q
             raise KeyboardInterrupt
-        flag.request()
-        notice(STOPPING)
+        if flag.request():  # False when q got there first
+            notice(STOPPING)
 
     return handle
 
@@ -96,12 +96,14 @@ def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr
     listener, never the run's outcome. The reader reads its own non-blocking
     descriptor of the terminal, so it can never block the run's exit.
     """
-    previous = signal.signal(signal.SIGINT, interrupt_handler(flag, notice))
-    fd = sys.stdin.fileno() if _foreground_terminal() else None
+    fd = _foreground_fd()
     saved = None
     reader_fd: int | None = None
     done = threading.Event()
     reader: threading.Thread | None = None
+    # Nothing that can raise sits between the install and the try, so the
+    # finally always restores the previous handler.
+    previous = signal.signal(signal.SIGINT, interrupt_handler(flag, notice))
     try:
         if fd is not None:
             try:
@@ -135,10 +137,11 @@ def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr
             os.close(reader_fd)
 
 
-def _foreground_terminal() -> bool:
-    """True when stdin is a terminal and this process is its foreground process group."""
+def _foreground_fd() -> int | None:
+    """Stdin's descriptor when it is a terminal and this process is its foreground group."""
     try:
         fd = sys.stdin.fileno()
-        return os.isatty(fd) and os.tcgetpgrp(fd) == os.getpgrp()
-    except (OSError, ValueError):  # not our controlling terminal, or stdin is closed or fake
-        return False
+        return fd if os.isatty(fd) and os.tcgetpgrp(fd) == os.getpgrp() else None
+    # stdin is None (fd 0 closed), closed or fake, or not our controlling terminal
+    except (AttributeError, OSError, ValueError):
+        return None

@@ -427,6 +427,18 @@ def test_an_id_repeated_across_pages_is_decided_once(tmp_path):
     assert [line["id"] for line in log_lines(path)] == ["m1", "m2", "m3"]
 
 
+@pytest.mark.parametrize("limit, expected", [(None, ["m1", "m2"]), (2, ["m1", "m2"])])
+def test_an_id_repeated_within_a_page_is_decided_once(limit, expected):
+    class Repeating(FakeMailbox):
+        def list_unprocessed(self, page_token=None, page_size=100):
+            return ["m1", "m1", "m2"], None
+
+    events = list(start(Repeating([make_email("m1"), make_email("m2")]), limit=limit))
+
+    assert events[0].total == 2
+    assert [d.message_id for d in decisions(events)] == expected
+
+
 def test_all_mail_with_a_limit_is_a_programming_error():
     with pytest.raises(ValueError, match="all_mail and limit"):
         next(start(FakeMailbox([make_email()]), limit=3, all_mail=True))

@@ -199,3 +199,30 @@ def test_exit_never_waits_on_a_read_racing_the_terminal_restore(terminal, monkey
     rescue.cancel()
     assert elapsed < 1
     assert reader_threads() == []
+
+
+def test_with_stdin_closed_only_ctrl_c_is_handled_and_the_handler_is_restored(monkeypatch):
+    monkeypatch.setattr(stop.sys, "stdin", None)  # as Python leaves it when fd 0 is closed
+    before = signal.getsignal(signal.SIGINT)
+
+    with listen_for_stop(StopFlag(), print):
+        assert signal.getsignal(signal.SIGINT) is not before
+        assert reader_threads() == []
+
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_an_interrupt_racing_q_neither_aborts_nor_repeats_the_notice():
+    class RacedByQ(StopFlag):
+        """q requests the stop between the handler's check and its request."""
+
+        @property
+        def requested(self):
+            return False
+
+    flag, notices = RacedByQ(), []
+    flag.request()  # q's request, with its own notice
+
+    interrupt_handler(flag, notices.append)(signal.SIGINT, None)
+
+    assert notices == []

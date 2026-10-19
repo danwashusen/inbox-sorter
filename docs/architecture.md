@@ -90,7 +90,7 @@ Plain frozen dataclasses in `types.py`, shared by every module.
 
 The loop lists IDs first (A-run-events), then works through them in order:
 
-1. `gmail` lists inbox IDs without `Sorter/_processed`, up to the cap.
+1. `gmail` lists inbox IDs without `Sorter/_processed`; `--all` lifts the cap.
 2. `gmail` fetches metadata; the engine answers the three questions.
 3. If `triage` says confidence is low, `gmail` fetches the body and the
    engine answers again (R-body-retry).
@@ -103,8 +103,8 @@ One modify call per message makes each message all-or-nothing. A crash
 leaves it unprocessed, so the next run retries it (R-resumable). Logging
 before applying means `undo` never misses a change.
 
-Gmail and engine work alternate, with no threads in v1. At about
-2.6 s per message, the model dominates, and Gmail calls add little.
+Gmail and engine work alternate in one thread; `q` is read in another. At
+about 2.6 s per message, the model dominates, and Gmail calls add little.
 
 ## Decision engines
 
@@ -243,7 +243,7 @@ Accepted items move here with an `A-<slug>` ID.
 - A-fixed-engine: no `[engine]` table; `run` and `setup` use clef-local.
 - A-run-events: `runner.run` yields `RunEvent`s for any reporter. It lists
   IDs first, so `RunStarted` has the total. Only a 404 fails one message;
-  others end the run once retries are spent. It refuses a non-local engine.
+  others end the run, transient ones after retries. Refuses non-local engines.
 - A-config-writer: `config.write_config` rewrites the file, no comments,
   via a temp file that must load back equal; it refuses changed values.
 - A-setup-prompter: `run_setup` asks through a `Prompter` (`ui/prompts.py`).
