@@ -22,7 +22,9 @@ class Pace:
     run's RunStarted.
     """
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic, window: int = RATE_WINDOW) -> None:
+    def __init__(
+        self, clock: Callable[[], float] = time.monotonic, window: int = RATE_WINDOW
+    ) -> None:
         self._clock = clock
         self._window = window
         self._total: int | None = None

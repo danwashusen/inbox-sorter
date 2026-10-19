@@ -23,18 +23,10 @@ from inbox_sorter.ui.dashboard import (
     title_text,
 )
 from inbox_sorter.ui.table import TableReporter
-from tests.factories import make_config, make_email, response
+from tests.factories import FakeClock, make_config, make_email, response
 
 CONFIG = make_config()
 AT = datetime(2026, 10, 17, 14, 2, 11)  # a Saturday
-
-
-class Clock:
-    def __init__(self) -> None:
-        self.now = 100.0
-
-    def __call__(self) -> float:
-        return self.now
 
 
 def test_count_text_with_and_without_a_total():
@@ -60,8 +52,10 @@ def test_pace_text_without_a_rate_or_an_eta():
 def test_retry_text_counts_down_on_one_line():
     event = Retrying(None, attempt=2, attempts=5, delay=8.0, error="503\n\x1b[2Jgone")
 
-    assert retry_text(event, 7.6) == "⟳ retrying in 7s (attempt 2 of 5): 503 ?[2Jgone"
-    assert retry_text(event, -3).startswith("⟳ retrying in 0s ")
+    assert retry_text(event, 8.0) == "⟳ retrying in 8s (attempt 2 of 5): 503 ?[2Jgone"
+    assert retry_text(event, 0.2).startswith("⟳ retrying in 1s ")
+    assert retry_text(event, 0).startswith("⟳ retrying now (attempt 2 of 5)")
+    assert retry_text(event, -3).startswith("⟳ retrying now ")
 
 
 def test_feed_text_shows_time_sender_subject_category_confidence_and_set_flags():
@@ -84,7 +78,9 @@ def test_feed_text_without_flags_has_no_icons():
 
 
 def test_failed_text_stays_on_one_line():
-    assert failed_text(AT, MessageFailed("m2", "boom\nagain")) == "14:02:11  ✗ m2 failed: boom again"
+    text = failed_text(AT, MessageFailed("m2", "boom\nagain"))
+
+    assert text == "14:02:11  ✗ m2 failed: boom again"
 
 
 def test_title_text_names_the_mode_engine_and_device():
@@ -97,7 +93,7 @@ def test_title_text_names_the_mode_engine_and_device():
 
 
 def test_dashboard_prints_the_table_rows_and_renders_the_panel():
-    clock = Clock()
+    clock = FakeClock()
     tally = SummaryTally(CONFIG, clock=clock)
     out = io.StringIO()
     email = make_email(sender="Sarah Chen <sarah@x.example>", body="SECRET BODY TEXT")
@@ -135,7 +131,7 @@ def test_dashboard_prints_the_table_rows_and_renders_the_panel():
 
 
 def test_feed_lines_are_cropped_not_wrapped_in_a_narrow_terminal():
-    clock = Clock()
+    clock = FakeClock()
     tally = SummaryTally(CONFIG, clock=clock)
     dashboard = Dashboard(tally, io.StringIO(), clock=clock, now=lambda: AT)
     events = [RunStarted("r1", dry_run=True, engine="clef-local", total=9)]
@@ -155,3 +151,29 @@ def test_feed_lines_are_cropped_not_wrapped_in_a_narrow_terminal():
     lines = narrow.getvalue().splitlines()
     assert len(lines) == len(wide.getvalue().splitlines())  # nothing wrapped
     assert sum("Order m" in line for line in lines) == 3
+
+
+def test_the_retry_line_shows_while_a_retry_waits_and_clears_on_the_next_message():
+    clock = FakeClock()
+    tally = SummaryTally(CONFIG, clock=clock)
+    dashboard = Dashboard(tally, io.StringIO(), clock=clock, now=lambda: AT)
+
+    def rendered() -> str:
+        out = io.StringIO()
+        Console(file=out, width=100).print(dashboard.panel())
+        return out.getvalue()
+
+    for event in [
+        RunStarted("r1", dry_run=True, engine="clef-local", total=2),
+        Retrying("m1", attempt=1, attempts=5, delay=8.0, error="503 unavailable"),
+    ]:
+        tally(event)
+        dashboard(event)
+    clock.now += 3
+    assert "⟳ retrying in 5s (attempt 1 of 5): 503 unavailable" in rendered()
+
+    email = make_email()
+    event = MessageDecided(email, decide(email, response(), CONFIG, False))
+    tally(event)
+    dashboard(event)
+    assert "retrying" not in rendered()

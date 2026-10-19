@@ -9,18 +9,10 @@ from inbox_sorter.types import (
     RunFinished,
     RunStarted,
 )
-from tests.factories import make_config, make_email, response
+from tests.factories import FakeClock, make_config, make_email, response
 
 EMAIL = make_email()
 DECIDED = MessageDecided(EMAIL, decide(EMAIL, response(), make_config(), False))
-
-
-class Clock:
-    def __init__(self) -> None:
-        self.now = 100.0
-
-    def __call__(self) -> float:
-        return self.now
 
 
 def started(total: int | None = 10) -> RunStarted:
@@ -28,7 +20,7 @@ def started(total: int | None = 10) -> RunStarted:
 
 
 def test_no_rate_or_eta_before_the_first_message():
-    clock = Clock()
+    clock = FakeClock()
     pace = Pace(clock)
     assert pace.rate() is None and pace.eta() is None
 
@@ -40,7 +32,7 @@ def test_no_rate_or_eta_before_the_first_message():
 
 
 def test_rate_after_one_message_runs_from_run_started():
-    clock = Clock()
+    clock = FakeClock()
     pace = Pace(clock)
     pace(started(total=10))
     clock.now += 4
@@ -51,7 +43,7 @@ def test_rate_after_one_message_runs_from_run_started():
 
 
 def test_rate_reflects_only_the_last_window_and_follows_slowdowns():
-    clock = Clock()
+    clock = FakeClock()
     pace = Pace(clock)
     pace(started(total=1000))
     for _ in range(RATE_WINDOW):
@@ -67,7 +59,7 @@ def test_rate_reflects_only_the_last_window_and_follows_slowdowns():
 
 
 def test_eta_counts_down_between_events_and_floors_at_zero():
-    clock = Clock()
+    clock = FakeClock()
     pace = Pace(clock)
     pace(started(total=3))
     clock.now += 10
@@ -82,7 +74,7 @@ def test_eta_counts_down_between_events_and_floors_at_zero():
 
 
 def test_a_resumed_run_counts_only_the_remaining_mail():
-    clock = Clock()
+    clock = FakeClock()
     pace = Pace(clock)
     pace(started(total=10))
     for _ in range(4):
@@ -99,7 +91,7 @@ def test_a_resumed_run_counts_only_the_remaining_mail():
 
 
 def test_failed_counts_as_done_and_other_events_change_nothing():
-    clock = Clock()
+    clock = FakeClock()
     pace = Pace(clock)
     pace(started(total=5))
     clock.now += 2
@@ -113,7 +105,7 @@ def test_failed_counts_as_done_and_other_events_change_nothing():
 
 
 def test_eta_without_a_total_or_with_nothing_left():
-    clock = Clock()
+    clock = FakeClock()
     unknown = Pace(clock)
     unknown(started(total=None))
     clock.now += 1
@@ -131,7 +123,7 @@ def test_eta_without_a_total_or_with_nothing_left():
 
 
 def test_a_zero_time_span_has_no_rate():
-    clock = Clock()
+    clock = FakeClock()
     pace = Pace(clock)
     pace(started(total=5))
     pace(DECIDED)  # at the same instant

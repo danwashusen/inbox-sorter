@@ -8,6 +8,7 @@ colour is paired with text or an icon (R-monochrome-safe), and no email
 body is ever shown.
 """
 
+import math
 import threading
 import time
 from collections import deque
@@ -80,9 +81,13 @@ def pace_text(
 
 
 def retry_text(event: Retrying, left: float) -> str:
-    """The retry status line, counting down ``left`` seconds to the next attempt."""
+    """The retry status line, counting down ``left`` seconds to the next attempt.
+
+    Once the wait is over the attempt is running, until the event that clears the line.
+    """
+    when = f"in {math.ceil(left)}s" if left > 0 else "now"
     return (
-        f"⟳ retrying in {int(max(left, 0))}s "
+        f"⟳ retrying {when} "
         f"(attempt {event.attempt} of {event.attempts}): {one_line(event.error)}"
     )
 
@@ -133,9 +138,11 @@ class Dashboard:
     """A context manager showing the live panel, and a reporter over RunEvents.
 
     Feed ``tally`` each event before the dashboard: the panel's categories,
-    flags and elapsed time come from it. State shared with the refresh
-    thread sits behind one lock; nothing calls into Rich while holding it,
-    since the refresh thread takes Rich's lock and then this one.
+    flags and elapsed time come from it. The dashboard's own state sits
+    behind one lock; nothing calls into Rich while holding it, since the
+    refresh thread takes Rich's lock and then this one. The tally is read
+    unlocked: its summary() only indexes counts, so a frame may lag by one
+    event but never fails.
     """
 
     def __init__(
@@ -202,6 +209,8 @@ class Dashboard:
         for line in self._table.lines(event):
             # A Text, never markup; soft_wrap leaves a long row to the terminal.
             self._console.print(Text(line), soft_wrap=True)
+        if self._live is not None:
+            self._live.refresh()  # printing redraws the old panel; draw this event now
 
     def panel(self) -> Panel:
         """The panel as it stands now; called on Rich's refresh thread."""
@@ -212,7 +221,7 @@ class Dashboard:
             feed = list(self._feed)
             retry = self._retry
         # The tally is fed first, so it has started whenever the dashboard has.
-        summary = self._tally.summary() if started and self._tally.started else None
+        summary = self._tally.summary() if started is not None and self._tally.started else None
         parts: list[RenderableType] = []
         if summary is None:
             parts.append(Text(LISTING))
