@@ -1,4 +1,6 @@
 import io
+import logging
+import sys
 from datetime import datetime, timedelta
 
 from rich.console import Console
@@ -192,3 +194,30 @@ def test_the_footer_offers_q_only_when_q_is_listened_for():
     assert "Ctrl-C stop after current · twice to abort" in footer()
     dashboard.notice(STOPPING)
     assert STOPPING[:40] in footer()
+
+
+class Terminal(io.StringIO):
+    """Output that Rich takes for a terminal, so Live redirects sys.stdout and sys.stderr."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_a_library_warning_prints_above_the_panel_not_past_it(monkeypatch):
+    # A handler made before the run holds the real stderr, as transformers' does.
+    stderr = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", stderr)
+    handler = logging.StreamHandler()
+    logger = logging.getLogger("tests.library")
+    logger.addHandler(handler)
+    logger.propagate = False
+    out = Terminal()
+    try:
+        with Dashboard(SummaryTally(CONFIG), out):
+            logger.warning("falling back to a slower kernel")
+        logger.warning("after the run")
+    finally:
+        logger.removeHandler(handler)
+
+    assert "falling back to a slower kernel" in out.getvalue()
+    assert stderr.getvalue() == "after the run\n"
