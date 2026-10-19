@@ -29,11 +29,13 @@ min_confidence = 0.85
 
 @pytest.fixture(autouse=True)
 def system_calls(monkeypatch):
-    """No test spawns caffeinate or osascript; notices and notifications are recorded.
+    """No test spawns caffeinate or osascript or waits out a retry; notices and
+    notifications are recorded.
 
     write_stderr uses os.write(2, …), which CliRunner's captured stderr would miss.
     """
     calls = {"notify": [], "stderr": []}
+    monkeypatch.setattr(cli.runner.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(cli, "keep_awake", contextlib.nullcontext)
     monkeypatch.setattr(cli, "notify", calls["notify"].append)
     monkeypatch.setattr(cli, "write_stderr", calls["stderr"].append)

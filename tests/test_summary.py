@@ -102,6 +102,6 @@ def test_a_stopped_run_ends_the_clock_and_a_retry_changes_no_count():
     tally(Retrying("m2", 1, 10, 1.0, "Gmail request failed (503): busy"))
     tally(RunStopped("r1", decided=1, failed=0, remaining=2))
 
-    summary = tally.summary()
-    assert summary.elapsed == 4.0
-    assert (summary.decided, summary.failed) == (1, 0)
+    assert tally.summary().elapsed == 4.0
+    assert tally.summary().elapsed == 4.0  # the clock stopped; 99.0 is never read
+    assert (tally.summary().decided, tally.summary().failed) == (1, 0)
