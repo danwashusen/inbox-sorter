@@ -95,11 +95,11 @@ the run prints after the summary.
 
 ## Undo
 
-`inbox-sorter undo <run-id>` previews undoing one applied run, without signing
-in. `--apply` removes the labels the run added, `Sorter/_processed` included,
-and restores the `INBOX` and `UNREAD` the run removed. Mail a later run logged,
-or deleted since (`gone`), is skipped. After sign-in, any other Gmail error or a
-Ctrl-C shows the counts and how to finish; a Ctrl-C at sign-in shows only how.
+`inbox-sorter undo <run-id>` previews undoing one applied run without signing
+in, skipping mail a later run logged. `--apply` removes the labels the run
+added, `Sorter/_processed` included, restores any `INBOX` or `UNREAD` the run
+removed, and skips deleted mail (`gone`). After sign-in, another Gmail error or
+a Ctrl-C shows the counts and how to finish; a Ctrl-C at sign-in shows only how.
 
 1. `Undo · <DRY RUN|APPLY> · run <id> · <n> <to undo|undone> · <n> skipped`
 2. Label counts, skips by reason, then a closing hint such as `--apply`.
