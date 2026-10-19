@@ -111,6 +111,7 @@ def test_low_confidence_retries_once_with_the_body_and_uses_the_second_answers()
     assert engine.requests[1].state["body"] == "Your receipt for order 42"
     assert decision.used_body
     assert decision.confidence == 0.97 and not decision.low_confidence
+    assert decision.probabilities.category == {"receipts": 0.97}  # the second response's
 
 
 @pytest.mark.parametrize("bodies, body_chars", [({}, 2000), ({"m1": "Receipt"}, 0)])

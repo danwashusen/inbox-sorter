@@ -3,6 +3,7 @@ from dataclasses import replace
 import pytest
 
 from inbox_sorter.triage import decide, needs_body
+from inbox_sorter.types import Probabilities
 from tests.factories import RECEIPTS, make_config, make_email, response
 
 CONFIG = make_config()
@@ -73,3 +74,11 @@ def test_needs_body_is_true_only_below_min_confidence():
 def test_an_unknown_category_choice_is_an_engine_error():
     with pytest.raises(ValueError, match="engine chose 'other'"):
         decide(make_email(), response(category="other"), CONFIG, used_body=False)
+
+
+def test_decide_carries_the_final_answers_probabilities():
+    decision = decide(make_email(), response(reply=0.3), CONFIG, used_body=True)
+
+    assert decision.probabilities == Probabilities(
+        category={"receipts": 0.97}, needs_reply=0.3, urgency=(0.8, 0.2, 0.0)
+    )

@@ -27,5 +27,6 @@ def assert_conforms(mailbox: Mailbox) -> None:
     labels = mailbox.list_labels()
     assert all(isinstance(label, LabelInfo) for label in labels)
     assert any(label.id == "INBOX" and label.system for label in labels)
+    assert mailbox.label_ids().get("INBOX") == "INBOX"
 
     assert len(mailbox.list_by_label("INBOX", 3)) <= 3

@@ -1,4 +1,7 @@
-"""The Mailbox seam: read-only Gmail access, and its Gmail API implementation.
+"""The Mailbox seam: Gmail reads and label changes, and its Gmail API implementation.
+
+Label changes are the only writes: no message is ever deleted, trashed or
+marked as spam (prd.md §Non-goals).
 
 The Google client libraries are imported inside the functions that need
 them, so importing this module or its pure helpers never loads them.
@@ -8,7 +11,7 @@ import base64
 import html
 import http.client
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -16,7 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from inbox_sorter.errors import UserError, error_reason
-from inbox_sorter.types import SORTER_PREFIX, Email
+from inbox_sorter.types import SORTER_PREFIX, SYSTEM_LABELS, Email
 
 PROCESSED_LABEL = SORTER_PREFIX + "_processed"
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]  # R-oauth-modify-scope
@@ -26,7 +29,7 @@ MAX_PAGE_SIZE = 500  # the most messages.list returns per call
 
 
 class MailboxError(UserError):
-    """A Gmail sign-in or read failed.
+    """A Gmail sign-in, read or label change failed.
 
     ``status`` is the HTTP status when Gmail returned one, else None.
     """
@@ -64,6 +67,55 @@ class Mailbox(Protocol):
         ...
 
     def list_labels(self) -> list[LabelInfo]: ...
+
+    def label_ids(self) -> dict[str, str]:
+        """Every label's name to its ID, system labels included, in one listing."""
+        ...
+
+    def create_label(self, name: str) -> str:
+        """Create a user label named ``name`` and return its ID."""
+        ...
+
+    def modify(
+        self, message_id: str, add_label_ids: Sequence[str], remove_label_ids: Sequence[str]
+    ) -> None:
+        """Add and remove labels on one message in a single change."""
+        ...
+
+
+class LabelResolver:
+    """Resolves label names to IDs for one apply run, creating missing labels on first use.
+
+    Lists the labels once, on the first lookup of a user label. A missing
+    label is created after its missing "/"-ancestors, shortest first, so
+    "Sorter" exists before "Sorter/Needs reply" (R-create-missing-labels).
+    """
+
+    def __init__(self, mailbox: Mailbox) -> None:
+        self._mailbox = mailbox
+        self._ids: dict[str, str] | None = None
+
+    def id_for(self, name: str) -> str:
+        if name in SYSTEM_LABELS:  # each system name is also its ID
+            return name
+        if self._ids is None:
+            self._ids = self._mailbox.label_ids()
+        ids = self._ids
+        found = self._find(ids, name)
+        if found is not None:
+            return found
+        parts = name.split("/")
+        for depth in range(1, len(parts)):
+            ancestor = "/".join(parts[:depth])
+            if self._find(ids, ancestor) is None:
+                ids[ancestor] = self._mailbox.create_label(ancestor)
+        ids[name] = self._mailbox.create_label(name)
+        return ids[name]
+
+    @staticmethod
+    def _find(ids: dict[str, str], name: str) -> str | None:
+        # Exact-case, as setup and config compare names; #19 settles the case rule.
+        return ids.get(name)
 
 
 def email_from_metadata(message: Mapping[str, Any]) -> Email:
@@ -360,6 +412,44 @@ class GmailMailbox:
                 )
             )
         return labels
+
+    def label_ids(self) -> dict[str, str]:
+        return {raw["name"]: raw["id"] for raw in self._raw_labels()}
+
+    def create_label(self, name: str) -> str:
+        with _gmail_errors(self._token_path):
+            created = (
+                self._service.users()
+                .labels()
+                .create(
+                    userId="me",
+                    body={
+                        "name": name,
+                        "labelListVisibility": "labelShow",
+                        "messageListVisibility": "show",
+                    },
+                )
+                .execute()
+            )
+        return created["id"]
+
+    def modify(
+        self, message_id: str, add_label_ids: Sequence[str], remove_label_ids: Sequence[str]
+    ) -> None:
+        with _gmail_errors(self._token_path):
+            (
+                self._service.users()
+                .messages()
+                .modify(
+                    userId="me",
+                    id=message_id,
+                    body={
+                        "addLabelIds": list(add_label_ids),
+                        "removeLabelIds": list(remove_label_ids),
+                    },
+                )
+                .execute()
+            )
 
     def _raw_labels(self) -> list[dict[str, Any]]:
         with _gmail_errors(self._token_path):

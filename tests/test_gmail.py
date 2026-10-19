@@ -11,6 +11,7 @@ from inbox_sorter.gmail import (
     PROCESSED_LABEL,
     GmailMailbox,
     LabelInfo,
+    LabelResolver,
     MailboxError,
     _write_private,
     email_from_metadata,
@@ -188,6 +189,104 @@ def test_fake_mailbox_raises_404_for_an_unknown_message():
     assert caught.value.status == 404
 
 
+def test_fake_mailbox_modify_adds_and_removes_labels():
+    mailbox = FakeMailbox([email("m1", "INBOX", "UNREAD")], labels=[INBOX, ALERTS])
+
+    mailbox.modify("m1", ["Label_2"], ["INBOX", "UNREAD"])
+
+    assert mailbox.emails[0].label_ids == {"Label_2"}
+    assert mailbox.modify_calls == [("m1", ("Label_2",), ("INBOX", "UNREAD"))]
+
+
+@pytest.mark.parametrize("message_id, add, status", [("missing", [], 404), ("m1", ["Label_7"], 400)])
+def test_fake_mailbox_modify_refuses_an_unknown_message_or_label(message_id, add, status):
+    mailbox = FakeMailbox([email("m1", "INBOX")], labels=[INBOX])
+
+    with pytest.raises(MailboxError) as caught:
+        mailbox.modify(message_id, add, [])
+
+    assert caught.value.status == status
+
+
+def test_fake_mailbox_creates_a_label_that_lookups_then_see():
+    mailbox = FakeMailbox([email("m1", "INBOX")], labels=[INBOX])
+
+    label_id = mailbox.create_label("Sorter/Alerts")
+    mailbox.modify("m1", [label_id], [])
+
+    assert mailbox.label_ids() == {"INBOX": "INBOX", "Sorter/Alerts": label_id}
+    assert mailbox.list_by_label("Sorter/Alerts", 5) == ["m1"]
+    with pytest.raises(MailboxError) as caught:
+        mailbox.create_label("Sorter/Alerts")
+    assert caught.value.status == 409
+
+
+def test_fake_mailbox_skips_a_message_once_it_is_marked_processed():
+    mailbox = FakeMailbox([email("m1", "INBOX")], labels=[INBOX, PROCESSED])
+
+    mailbox.modify("m1", [PROCESSED.id], [])
+
+    assert mailbox.list_unprocessed() == ([], None)
+
+
+# LabelResolver
+
+
+def test_resolver_returns_a_system_label_without_listing():
+    mailbox = FakeMailbox()
+
+    assert LabelResolver(mailbox).id_for("INBOX") == "INBOX"
+    assert mailbox.label_ids_calls == 0
+
+
+def test_resolver_lists_labels_once():
+    mailbox = FakeMailbox(labels=[ALERTS, PROCESSED])
+    resolver = LabelResolver(mailbox)
+
+    assert resolver.id_for("Sorter/Alerts") == "Label_2"
+    assert resolver.id_for(PROCESSED_LABEL) == "Label_9"
+    assert mailbox.label_ids_calls == 1
+    assert mailbox.created == []
+
+
+def test_resolver_creates_missing_ancestors_first():
+    mailbox = FakeMailbox()
+    resolver = LabelResolver(mailbox)
+
+    label_id = resolver.id_for("Sorter/Needs reply")
+
+    assert mailbox.created == ["Sorter", "Sorter/Needs reply"]
+    assert label_id == "Label_new_2"
+    assert resolver.id_for("Sorter/Needs reply") == label_id
+    assert mailbox.created == ["Sorter", "Sorter/Needs reply"]
+
+
+def test_resolver_does_not_recreate_an_existing_ancestor():
+    mailbox = FakeMailbox(labels=[LabelInfo("Label_1", "Sorter", False, 0)])
+
+    LabelResolver(mailbox).id_for("Sorter/Today")
+
+    assert mailbox.created == ["Sorter/Today"]
+
+
+def test_resolver_resolves_an_imported_label_and_recreates_a_deleted_one():
+    mailbox = FakeMailbox(labels=[LabelInfo("Label_5", "Receipts", False, 3)])
+    resolver = LabelResolver(mailbox)
+
+    assert resolver.id_for("Receipts") == "Label_5"
+    resolver.id_for("Bills")
+
+    assert mailbox.created == ["Bills"]
+
+
+def test_resolver_matches_names_exact_case():
+    mailbox = FakeMailbox(labels=[LabelInfo("Label_5", "Receipts", False, 3)])
+
+    LabelResolver(mailbox).id_for("receipts")
+
+    assert mailbox.created == ["receipts"]
+
+
 # GmailMailbox
 
 
@@ -304,6 +403,71 @@ def test_list_labels_reads_each_labels_count():
         LabelInfo("INBOX", "INBOX", True, 120),
         LabelInfo("Label_2", "Receipts", False, 7),
     ]
+
+
+def test_modify_sends_one_messages_modify():
+    service = StubService({"messages.modify": {"id": "m1"}})
+
+    GmailMailbox(service).modify("m1", ("Label_2", "Label_9"), ("INBOX",))
+
+    assert service.calls == [
+        (
+            "messages.modify",
+            dict(
+                userId="me",
+                id="m1",
+                body={"addLabelIds": ["Label_2", "Label_9"], "removeLabelIds": ["INBOX"]},
+            ),
+        )
+    ]
+
+
+def test_create_label_sends_a_visible_user_label():
+    service = StubService({"labels.create": {"id": "Label_7", "name": "Sorter/Today"}})
+
+    assert GmailMailbox(service).create_label("Sorter/Today") == "Label_7"
+    assert service.calls == [
+        (
+            "labels.create",
+            dict(
+                userId="me",
+                body={
+                    "name": "Sorter/Today",
+                    "labelListVisibility": "labelShow",
+                    "messageListVisibility": "show",
+                },
+            ),
+        )
+    ]
+
+
+def test_label_ids_lists_labels_once_without_reading_each():
+    service = StubService(
+        {"labels.list": {"labels": [{"id": "INBOX", "name": "INBOX"}, {"id": "L2", "name": "Bills"}]}}
+    )
+
+    assert GmailMailbox(service).label_ids() == {"INBOX": "INBOX", "Bills": "L2"}
+    assert [key for key, _ in service.calls] == ["labels.list"]
+
+
+@pytest.mark.parametrize(
+    "key, call",
+    [
+        ("labels.create", lambda mailbox: mailbox.create_label("Receipts")),
+        ("messages.modify", lambda mailbox: mailbox.modify("m1", ["L2"], [])),
+    ],
+)
+@pytest.mark.parametrize("status", [409, 500])
+def test_write_errors_become_mailbox_errors_with_the_status(key, call, status):
+    import httplib2
+    from googleapiclient.errors import HttpError
+
+    service = StubService({key: HttpError(httplib2.Response({"status": status}), b"")})
+
+    with pytest.raises(MailboxError) as caught:
+        call(GmailMailbox(service))
+
+    assert caught.value.status == status
 
 
 def test_gmail_errors_become_mailbox_errors_with_the_status():

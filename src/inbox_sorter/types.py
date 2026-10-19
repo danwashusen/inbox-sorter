@@ -42,6 +42,15 @@ class Email:
 
 
 @dataclass(frozen=True)
+class Probabilities:
+    """The engine's final answers, for the run log (R-run-log)."""
+
+    category: dict[str, float]  # every offered category ID to its probability
+    needs_reply: float
+    urgency: tuple[float, ...]  # one per urgency level, lowest first
+
+
+@dataclass(frozen=True)
 class Decision:
     message_id: str
     category: str
@@ -53,6 +62,7 @@ class Decision:
     # Label names, INBOX and UNREAD included; resolved to IDs when applied.
     add_labels: tuple[str, ...]
     remove_labels: tuple[str, ...]
+    probabilities: Probabilities | None = None  # None only in hand-built test decisions
 
 
 @dataclass(frozen=True)
