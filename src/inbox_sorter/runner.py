@@ -39,10 +39,7 @@ def run(
     run_id: str,
 ) -> Iterator[RunEvent]:
     """Dry-run up to ``limit`` (else ``max_messages``) unprocessed inbox messages."""
-    if not engine.runs_locally:
-        raise UserError(
-            f"engine {engine.name} sends email content off this machine, which R-local-only forbids"
-        )
+    require_local(engine)
 
     cap = limit if limit is not None else config.run.max_messages
     ids: list[str] = []
@@ -59,7 +56,7 @@ def run(
     decided = failed = 0
     for message_id in ids:
         try:
-            email, decision = _decide(mailbox, engine, config, questions, message_id)
+            email, decision = decide_message(mailbox, engine, config, questions, message_id)
         except MailboxError as error:
             if error.status != 404:  # only a message deleted since listing fails alone
                 raise
@@ -71,7 +68,15 @@ def run(
     yield RunFinished(run_id, decided, failed)
 
 
-def _decide(
+def require_local(engine: DecisionEngine) -> None:
+    """Refuse an engine that sends email content off this machine (C-local-only)."""
+    if not engine.runs_locally:
+        raise UserError(
+            f"engine {engine.name} sends email content off this machine, which R-local-only forbids"
+        )
+
+
+def decide_message(
     mailbox: Mailbox,
     engine: DecisionEngine,
     config: Config,

@@ -105,6 +105,16 @@ escaped as `\\`, `\"`, `\n` and `\t`, so a record never spans lines. A
 carriage return becomes `\r`, and any other control character, line
 separator or bidi control `\uXXXX`, in JSON lines too.
 
+`setup` prints its accuracy report as records, after its summary. When no
+enabled category's label has mail, it prints
+`no labelled mail to check accuracy against` instead, in every mode.
+
+- `progress done=<n> total=<n>`, after every 10th message except the last
+- `category id=<id> label=<label> sampled=<n> correct=<n>`, one per
+  enabled category
+- `confusion actual=<id> predicted=<id> count=<n>`, most common first
+- `accuracy engine=<engine> sampled=<n> correct=<n>`, last
+
 Label lists are joined with `,`. `--json` prints the same records as JSON
 lines, with the record name in `"event"`, and implies `--plain`. No email
 body is ever printed.
@@ -127,10 +137,24 @@ with sensible defaults, so Enter accepts the common answer:
 Without a terminal, or with `--plain` or `--json`, `setup` asks the same
 questions as line prompts on stdin: `[Y/n]` confirms, `[<default>]` text
 and numbered choices. Enter takes the default. If input ends early, or on
-Ctrl-C, `setup` writes nothing and exits 1.
+Ctrl-C during the prompts or sign-in, `setup` exits 1 and writes nothing.
+Ctrl-C during the accuracy check exits 1 but keeps the config already
+written.
 
 The accuracy report at the end uses the same category bars as the run
-dashboard.
+dashboard. While messages are decided, a transient progress bar shows
+"checking accuracy" with a done/total count. Then the report shows:
+
+- A heading: `Accuracy · <engine> · <correct>/<sampled> correct (<pct>%)`.
+- One bar per enabled category, filled by its share of correct guesses,
+  with `<correct>/<sampled>  <pct>%` as text, or `no labelled mail`.
+- `Most common confusions`: up to 5 lines of
+  `<actual label> → <predicted label>  <count>`, left out when there are
+  none.
+
+A guess is correct when the message already carries the chosen
+category's label. When no enabled category's label has any mail,
+`setup` says so and skips the model load.
 
 ## Building trust
 

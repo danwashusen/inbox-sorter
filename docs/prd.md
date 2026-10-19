@@ -89,9 +89,15 @@ writes `inbox-sorter.toml`. It is the only command that edits the config.
 3. For each accepted label, prompt for the description, actions and
    `min_confidence`. The description is prefilled with the label name.
 4. Offer to add new categories, created as `Sorter/<name>`.
-5. Classify a sample of mail that already carries the accepted labels.
-   Report per-category accuracy and the most common confusions.
-6. Write the config and print a summary.
+5. Write the config and print a summary.
+6. Classify a sample of mail that already carries each enabled
+   category's label. Report per-category accuracy and the most common
+   confusions.
+
+The accuracy check runs whenever the config has an enabled category,
+even on a re-sync that changes nothing. So a description edited by hand
+can be checked by running the command again. It runs after the write, so
+a failed model load or a stopped check never loses the answers.
 
 A label declined in step 2 is offered again the next time `setup` runs.
 
@@ -182,8 +188,9 @@ R-dry-run-default.
   `Sorter/*`, with counts and sample senders and subjects.
 - R-setup-prompts: `setup` prompts per accepted label for description, actions
   and `min_confidence`, then writes the config.
-- R-setup-accuracy: `setup` reports per-category accuracy on a sample of
-  already-labelled mail.
+- R-setup-accuracy: after writing the config, `setup` reports
+  per-category accuracy on a sample of already-labelled mail, up to 10
+  messages per enabled category.
 - R-setup-resync: Re-running `setup` never changes existing entries' values;
   it offers new labels and disables imported categories whose label was
   deleted.

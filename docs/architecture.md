@@ -70,10 +70,11 @@ Modules marked **(exists)** are built. The others are planned.
   messages. So far it dry-runs: no apply, log or stop flag.
 - `runlog.py`: appends one JSON line per decision; reads a run back for
   `undo`.
-- `setup.py` **(exists)**: re-sync and the wizard; accuracy report to come.
+- `setup.py` **(exists)**: re-sync, the wizard and the accuracy check.
 - `ui/dashboard.py`: renders `RunEvent`s as the live panel.
-- `ui/plain.py`, `ui/table.py` and `ui/prompts.py` **(exist)**: plain
-  lines, the dry-run table shown until the panel lands, `setup` prompts.
+- `ui/plain.py`, `ui/table.py`, `ui/prompts.py`, `ui/bars.py` and
+  `ui/accuracy.py` **(exist)**: plain lines, the dry-run table shown until
+  the panel lands, `setup` prompts, category bars and the accuracy report.
 - `system.py`: `caffeinate` and notifications via subprocess.
 
 ## Core types
@@ -140,7 +141,7 @@ Adapters:
 - `engines/systemone_http.py`: future. Posts the same request to any
   System One endpoint: Jev's hosted API, or clef served by SGLang.
 
-v1 has no engine setting: `run` always uses clef-local (A-fixed-engine).
+v1 has no engine setting: `run` and `setup` use clef-local (A-fixed-engine).
 
 Switching engines has three consequences the design accounts for:
 
@@ -150,9 +151,8 @@ Switching engines has three consequences the design accounts for:
 - **Audit.** Each run log line records the engine `name`, so `undo` and
   later analysis know which engine decided.
 - **Privacy.** A hosted engine such as Jev sends email content off the
-  machine, which R-local-only and C-local-only forbid. `runner.run`
-  refuses an engine with `runs_locally = False` (A-run-events). Allowing
-  one needs those rules amended first.
+  machine, which R-local-only and C-local-only forbid. `run` and `setup`
+  refuse one (`runner.require_local`) until those rules are amended.
 
 ## Gmail integration
 
@@ -181,9 +181,8 @@ can be versioned separately from state.
 Per the constitution's testing rules, unit tests never load clef or call
 Gmail (C-fast-tests).
 
-- `FakeMailbox` **(exists)**, in `tests/fake_mailbox.py`, holds messages,
-  bodies and labels in memory; no config picks a mailbox, so it is
-  test-only.
+- `FakeMailbox` **(exists)**, in `tests/fake_mailbox.py`, holds messages, bodies
+  and labels in memory; no config picks a mailbox, so it is test-only.
 - `tests/mailbox_contract.py` **(exists)** checks any `Mailbox` against the
   read contract. It runs on `FakeMailbox` by default, and on the real
   inbox with `uv run pytest -m gmail`.
@@ -192,10 +191,9 @@ Gmail (C-fast-tests).
 - Most tests target `triage`, `config`, `setup`, `runlog` and the runner
   loop with both fakes. Engine adapters and the Gmail client get
   marker-gated tests only (C-slow-tests-opt-in).
-- `tests/engine_contract.py` **(exists)** checks any `DecisionEngine`
-  returns a typed answer per question with probabilities summing to 1.
-  It runs on `FakeEngine` by default, and on clef with
-  `uv run pytest -m model`.
+- `tests/engine_contract.py` **(exists)** checks any `DecisionEngine` returns a
+  typed answer per question with probabilities summing to 1. It runs on
+  `FakeEngine` by default, and on clef with `uv run pytest -m model`.
 
 ## Dependencies
 
@@ -247,11 +245,13 @@ Accepted items move here with an `A-<slug>` ID.
 - A-config-location: `setup` and `run` read `inbox-sorter.toml` from the
   current directory; `--config PATH` overrides it
   (`config.resolve_config_path`).
-- A-fixed-engine: v1 has no `[engine]` table; `run` always builds
-  `make_engine("clef-local")`.
+- A-fixed-engine: no `[engine]` table; `run` and `setup` use clef-local.
 - A-run-events: `runner.run` yields `RunEvent`s for any reporter. It lists
   IDs first, so `RunStarted` has the total. Only a 404 fails one message;
   other Gmail errors end the run. It refuses a non-local engine.
 - A-config-writer: `config.write_config` rewrites the file, no comments,
   via a temp file that must load back equal; it refuses changed values.
 - A-setup-prompter: `run_setup` asks through a `Prompter` (`ui/prompts.py`).
+- A-accuracy-check: `check_accuracy` decides as `run` does, through
+  `runner.decide_message`; a guess is right if the message has its label.
+- A-category-bars: `ui/bars.py` draws the bars for setup and the dashboard.
