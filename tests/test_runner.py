@@ -7,9 +7,10 @@ from inbox_sorter.engines.fake import FakeEngine
 from inbox_sorter.errors import UserError
 from inbox_sorter.gmail import PROCESSED_LABEL, LabelInfo, MailboxError
 from inbox_sorter.questions import build_questions
-from inbox_sorter.runlog import RunLog, RunLogError
+from inbox_sorter.runlog import RunLog, RunLogError, read_log
 from inbox_sorter.runner import decide_message, new_run_id, run
 from inbox_sorter.types import MessageDecided, MessageFailed, RunFinished, RunStarted
+from inbox_sorter.undo import apply_undo, plan_undo
 from tests.factories import answers, make_config, make_email
 from tests.fake_mailbox import FakeMailbox
 
@@ -289,6 +290,54 @@ def test_an_apply_run_without_a_log_is_a_programming_error():
 
     with pytest.raises(ValueError, match="needs a run log"):
         next(events)
+
+
+# Undo of an apply run
+
+
+def undo(mailbox, path, run_id):
+    plan = plan_undo(read_log(path), run_id)
+    list(apply_undo(mailbox, plan))
+    return plan
+
+
+def test_undo_restores_every_message_to_its_pre_run_labels(tmp_path):
+    starred = make_email("m2", labels=("INBOX", "UNREAD", "STARRED"))
+    mailbox = FakeMailbox([make_email("m1"), starred], labels=[RECEIPTS])
+    before = {email.id: email.label_ids for email in mailbox.emails}
+    path = tmp_path / "runs.jsonl"
+    list(start(mailbox, log=RunLog(path)))
+    assert [email.label_ids - {"STARRED"} for email in mailbox.emails] == [
+        {"Label_5", mailbox.label_ids()[PROCESSED_LABEL]}
+    ] * 2  # archived, read and sorted
+
+    plan = undo(mailbox, path, "r1")
+
+    assert {email.id: email.label_ids for email in mailbox.emails} == before
+    assert [step.message_id for step in plan.steps] == ["m1", "m2"]
+    assert mailbox.list_unprocessed()[0] == ["m1", "m2"]  # the next run sorts them again
+
+
+def test_undo_skips_a_message_a_later_run_changed(tmp_path):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")], labels=[RECEIPTS, PROCESSED])
+    before = mailbox.emails[0].label_ids
+    path = tmp_path / "runs.jsonl"
+    mailbox.fail_modify = {"m1"}
+    with pytest.raises(MailboxError):  # r1 logs m1 but leaves it unchanged
+        list(start(mailbox, log=RunLog(path)))
+    mailbox.fail_modify = set()
+    list(start(mailbox, log=RunLog(path), run_id="r2"))  # r2 sorts m1 and m2
+    after_r2 = mailbox.emails[0].label_ids
+    assert after_r2 != before
+
+    plan = undo(mailbox, path, "r1")
+
+    assert plan.later_run == ("m1",) and plan.steps == ()
+    assert mailbox.emails[0].label_ids == after_r2
+
+    undo(mailbox, path, "r2")
+
+    assert mailbox.emails[0].label_ids == before
 
 
 def test_run_id_is_a_utc_timestamp():

@@ -3,7 +3,6 @@ import json
 
 from inbox_sorter.setup import AccuracyReport, CategoryAccuracy, Confusion
 from inbox_sorter.ui.accuracy import (
-    AccuracyProgress,
     accuracy_bars,
     accuracy_heading,
     accuracy_records,
@@ -51,24 +50,6 @@ def test_heading_gives_the_total_or_says_there_was_nothing_to_check():
     assert accuracy_heading(REPORT) == "Accuracy · fake · 8/10 correct (80%)"
     empty = AccuracyReport("fake", (CategoryAccuracy("alerts", "Sorter/Alerts", 0, 0),), ())
     assert accuracy_heading(empty) == "Accuracy · fake · no labelled mail to check"
-
-
-def test_plain_progress_every_ten_messages_except_after_the_last():
-    out = io.StringIO()
-    with AccuracyProgress(plain=True, json_lines=False, out=out) as progress:
-        for done in range(1, 26):
-            progress(done, 25)
-
-    assert out.getvalue().splitlines() == ["progress done=10 total=25", "progress done=20 total=25"]
-
-
-def test_terminal_progress_writes_no_plain_records():
-    out = io.StringIO()
-    with AccuracyProgress(plain=False, json_lines=False, out=out) as progress:
-        for done in range(1, 26):
-            progress(done, 25)
-
-    assert "progress done=" not in out.getvalue()
 
 
 def test_terminal_report_shows_labels_literally():

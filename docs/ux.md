@@ -93,15 +93,25 @@ the run prints after the summary.
 5. `Run <id> · undo with: inbox-sorter undo <id>`, or `dry run, nothing
    to undo`.
 
+## Undo
+
+`inbox-sorter undo <run-id>` previews undoing one applied run without signing
+in, skipping mail a later run logged. `--apply` removes the labels the run
+added, `Sorter/_processed` included, restores any `INBOX` or `UNREAD` the run
+removed, and skips deleted mail (`gone`). After sign-in, another Gmail error or
+a Ctrl-C shows the counts and how to finish; a Ctrl-C at sign-in shows only how.
+
+1. `Undo · <DRY RUN|APPLY> · run <id> · <n> <to undo|undone> · <n> skipped`
+2. Label counts, skips by reason, then a closing hint such as `--apply`.
+
 ## Plain mode
 
 When output is not a terminal, or with `--plain`, the run prints one line
 per decision and a periodic progress line instead of the panel. The
 format is stable so it can be piped to a file or `grep`.
 
-The shared options go before the command: `inbox-sorter --plain run`.
-Each line is a logfmt record: its name, then `key=value` pairs in a fixed
-order.
+The shared options go before the command: `inbox-sorter --plain run`. Each line
+is a logfmt record: its name, then `key=value` pairs in a fixed order.
 
 - `started run=<run-id> mode=<dry-run|apply> engine=<engine> total=<n>`
 - `decided id=<message-id> category=<id> confidence=<0.00> reply=<bool>
@@ -115,6 +125,14 @@ order.
 - `summary run=<run-id> mode=<dry-run|apply> decided=<n> failed=<n>
   reply=<n> today=<n> low=<n> elapsed=<seconds>
   review=Sorter/_low-confidence`, last
+
+`undo` prints the skips it found in the log, then one record per message (`gone`
+under `--apply`), then a total; `--apply` adds the `progress` record:
+
+- `skipped id=<message-id> reason=<later-run|unchanged|gone>`
+- `planned` (dry run) or `undone id=<message-id> restore=<labels>
+  remove=<labels>`
+- `undo run=<run-id> mode=<dry-run|apply> undone=<n> skipped=<n>`
 
 A value is double-quoted when it is empty or holds a space, `"`, `=`, `\`
 or a control character. Inside quotes `\`, `"`, a newline and a tab are
