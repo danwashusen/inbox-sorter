@@ -105,7 +105,9 @@ escaped as `\\`, `\"`, `\n` and `\t`, so a record never spans lines. A
 carriage return becomes `\r`, and any other control character, line
 separator or bidi control `\uXXXX`, in JSON lines too.
 
-`setup` prints its accuracy report as records, after its summary line:
+`setup` prints its accuracy report as records, after its summary. When no
+enabled category's label has mail, it prints
+`no labelled mail to check accuracy against` instead, in every mode.
 
 - `progress done=<n> total=<n>`, after every 10th message except the last
 - `category id=<id> label=<label> sampled=<n> correct=<n>`, one per

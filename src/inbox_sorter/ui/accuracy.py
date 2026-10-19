@@ -1,6 +1,7 @@
 """Setup's accuracy report: category bars on a terminal, records in plain mode.
 
-No email content is ever printed: only label names, category IDs and counts.
+No email content is ever printed: only label names, category IDs, counts and
+the engine name.
 """
 
 from collections.abc import Callable
@@ -12,13 +13,12 @@ from rich.text import Text
 
 from inbox_sorter.setup import AccuracyReport
 from inbox_sorter.ui.bars import Bar, category_bars
-from inbox_sorter.ui.plain import progress_line, record
+from inbox_sorter.ui.plain import PROGRESS_EVERY, progress_line, record
 from inbox_sorter.ui.table import one_line
 
 NO_LABELLED_MAIL = "no labelled mail to check accuracy against"
 CONFIG_KEPT = "the config on disk is as reported above"
 ACCURACY_STOPPED = f"accuracy check stopped; {CONFIG_KEPT}"
-PROGRESS_EVERY = 10  # plain progress records, as in run (ux.md §Plain mode)
 
 
 def _percent(correct: int, sampled: int) -> int:

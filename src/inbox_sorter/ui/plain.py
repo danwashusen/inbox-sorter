@@ -15,6 +15,8 @@ from inbox_sorter.types import MessageDecided, MessageFailed, RunEvent, RunFinis
 ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\t": "\\t", "\r": "\\r"}
 # Bidi controls can reorder what a terminal shows (sender spoofing).
 BIDI_CONTROLS = frozenset("\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+# A progress record follows every 10th message, except the last (ux.md §Plain mode).
+PROGRESS_EVERY = 10
 
 
 def plain_line(event: RunEvent, json_lines: bool) -> str:
@@ -60,7 +62,9 @@ def progress_line(done: int, total: int | None, json_lines: bool) -> str:
 class PlainReporter:
     """Writes each event's record, plus a progress record every ``progress_every`` messages."""
 
-    def __init__(self, out: TextIO, json_lines: bool = False, progress_every: int = 10) -> None:
+    def __init__(
+        self, out: TextIO, json_lines: bool = False, progress_every: int = PROGRESS_EVERY
+    ) -> None:
         self.out = out
         self.json_lines = json_lines
         self.progress_every = progress_every
