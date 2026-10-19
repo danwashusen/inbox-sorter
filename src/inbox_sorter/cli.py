@@ -21,7 +21,7 @@ from inbox_sorter.runlog import RUN_LOG_NAME, RunLog, read_log
 from inbox_sorter.setup import SetupCancelled, check_accuracy, run_setup, sample_ids
 from inbox_sorter.stop import StopFlag, listen_for_stop, write_stderr
 from inbox_sorter.storage import state_dir
-from inbox_sorter.summary import SummaryTally
+from inbox_sorter.summary import RunSummary, SummaryTally
 from inbox_sorter.system import keep_awake, notify
 from inbox_sorter.ui.accuracy import (
     ACCURACY_STOPPED,
@@ -156,29 +156,30 @@ def run(
                 stopped = isinstance(event, RunStopped)
     except KeyboardInterrupt:  # the second Ctrl-C
         if tally.started:
-            _print_summary(tally, opts)
+            _print_summary(tally.summary(), opts)
         raise UserError(ABORTED) from None
     except UserError as error:
         # An apply run that fails midway has changed earlier messages; show
         # its run ID and totals before the error.
         summary = tally.summary() if tally.started else None
         if summary is not None:
-            _print_summary(tally, opts)
+            _print_summary(summary, opts)
         notify(notification_text(summary, str(error)))
         raise
     finally:
         engine.close()
-    _print_summary(tally, opts)
+    summary = tally.summary()
+    _print_summary(summary, opts)
     if not stopped:  # whoever stopped the run is at the keyboard
-        notify(notification_text(tally.summary(), None))
+        notify(notification_text(summary, None))
 
 
-def _print_summary(tally: SummaryTally, opts: CliOptions) -> None:
+def _print_summary(summary: RunSummary, opts: CliOptions) -> None:
     if opts.plain:
-        for line in summary_records(tally.summary(), opts.json):
+        for line in summary_records(summary, opts.json):
             print(line, flush=True)
     else:
-        print_summary(tally.summary(), sys.stdout)
+        print_summary(summary, sys.stdout)
 
 
 @app.command()

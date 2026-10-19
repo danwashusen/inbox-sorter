@@ -20,12 +20,17 @@ NOTIFY_SCRIPT = (
 
 @contextmanager
 def keep_awake() -> Iterator[None]:
-    """Block idle sleep until the block exits, or this process dies (`caffeinate -w`)."""
+    """Block idle sleep until the block exits, or this process dies (`caffeinate -w`).
+
+    caffeinate runs in its own session, so the Ctrl-C that asks the run to
+    stop gracefully doesn't reach it and end keep-awake early.
+    """
     try:
         process = subprocess.Popen(
             ["caffeinate", "-i", "-w", str(os.getpid())],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
     except OSError:  # no caffeinate: run on, unprotected
         process = None

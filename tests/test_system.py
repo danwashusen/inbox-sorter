@@ -42,6 +42,7 @@ def test_a_failed_notification_is_ignored(monkeypatch, error):
 class FakeProcess:
     def __init__(self, args, **kwargs):
         self.args = args
+        self.kwargs = kwargs
         self.terminated = False
         self.waited = False
 
@@ -55,11 +56,12 @@ class FakeProcess:
 def test_keep_awake_runs_caffeinate_for_this_process_and_ends_it_on_exit(monkeypatch):
     started = []
     monkeypatch.setattr(system.subprocess, "Popen", lambda args, **kw: started.append(
-        FakeProcess(args)) or started[-1])  # fmt: skip
+        FakeProcess(args, **kw)) or started[-1])  # fmt: skip
 
     with system.keep_awake():
         [process] = started
         assert process.args == ["caffeinate", "-i", "-w", str(os.getpid())]
+        assert process.kwargs["start_new_session"] is True  # out of reach of Ctrl-C
         assert not process.terminated
 
     assert process.terminated and process.waited

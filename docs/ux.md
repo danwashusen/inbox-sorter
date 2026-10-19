@@ -119,7 +119,7 @@ is a logfmt record: its name, then `key=value` pairs in a fixed order.
 - `failed id=<message-id> error=<text>`
 - `progress done=<n> total=<n>`, after every 10th message except the last
 - `retrying id=<message-id> attempt=<n> of=<n> delay=<seconds>
-  error=<text>`, before each retry wait; `id` is empty while listing
+  error=<text>`, before each wait; `id` is empty (JSON `null`) when listing
 - `finished run=<run-id> decided=<n> failed=<n>`, or
   `stopped run=<run-id> decided=<n> failed=<n> remaining=<n>` after a stop
 - `total category=<id> label=<label> messages=<n> labelled=<n>

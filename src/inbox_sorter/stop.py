@@ -41,8 +41,15 @@ class StopFlag:
 
 
 def write_stderr(text: str) -> None:
-    """Write one line to stderr; safe in a signal handler, unlike print."""
-    os.write(2, (text + "\n").encode())
+    """Write one line to stderr; safe in a signal handler, unlike print.
+
+    A failed write is ignored: raised from the handler, it would end the run
+    the user asked to stop gracefully.
+    """
+    try:
+        os.write(2, (text + "\n").encode())
+    except OSError:  # stderr closed, or a pipe whose reader has gone
+        pass
 
 
 def interrupt_handler(

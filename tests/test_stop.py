@@ -116,3 +116,15 @@ def test_in_the_background_only_ctrl_c_is_handled(terminal, monkeypatch, pgrp):
         assert signal.getsignal(signal.SIGINT) is not before_handler
 
     assert signal.getsignal(signal.SIGINT) is before_handler
+
+
+def test_a_failed_notice_write_is_ignored(monkeypatch):
+    def broken(fd, data):
+        raise BrokenPipeError
+
+    monkeypatch.setattr(stop.os, "write", broken)
+    flag = StopFlag()
+
+    interrupt_handler(flag, stop.write_stderr)(signal.SIGINT, None)  # does not raise
+
+    assert flag.requested

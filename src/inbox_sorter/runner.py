@@ -68,7 +68,10 @@ def run(
         raise ValueError("all_mail and limit cannot be used together")
     require_local(engine)
 
-    cap = None if all_mail else limit if limit is not None else config.run.max_messages
+    if all_mail:
+        cap = None
+    else:
+        cap = limit if limit is not None else config.run.max_messages
     ids: list[str] = []
     seen: set[str] = set()
     page_token: str | None = None
