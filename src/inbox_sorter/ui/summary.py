@@ -42,7 +42,8 @@ def category_actions(total: CategoryTotal, dry_run: bool) -> str:
     """Such as "1,544 labelled, 1,500 archived"; a zero count is left out."""
     words = PLANNED if dry_run else APPLIED
     counts = (total.labelled, total.archived, total.marked_read)
-    return ", ".join(f"{count:,} {word}" for count, word in zip(counts, words) if count)
+    pairs = zip(counts, words, strict=True)
+    return ", ".join(f"{count:,} {word}" for count, word in pairs if count)
 
 
 def summary_bars(summary: RunSummary) -> list[Bar]:

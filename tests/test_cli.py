@@ -49,13 +49,15 @@ def test_plain_stdout_holds_only_records_even_when_sign_in_prints(tmp_path, monk
     assert not (tmp_path / "runs.jsonl").exists()
 
 
-def apply_cli(tmp_path, monkeypatch, mailbox):
-    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(lambda state_dir: mailbox))
-    monkeypatch.setattr(cli, "state_dir", lambda: tmp_path)
-    monkeypatch.setattr(cli, "make_engine", lambda kind: FakeEngine(lambda request: answers()))
-    config = tmp_path / "inbox-sorter.toml"
+def apply_args(tmp_path, monkeypatch, mailbox):
+    """Fake sign-in and the model load, write CONFIG, and return the apply run's arguments."""
+    config = setup_cli(tmp_path, monkeypatch, mailbox, FakeEngine(lambda request: answers()))
     config.write_text(CONFIG)
-    return CliRunner().invoke(cli.app, ["--json", "run", "--apply", "--config", str(config)])
+    return ["--json", "run", "--apply", "--config", str(config)]
+
+
+def apply_cli(tmp_path, monkeypatch, mailbox):
+    return CliRunner().invoke(cli.app, apply_args(tmp_path, monkeypatch, mailbox))
 
 
 def test_apply_logs_each_decision_and_changes_gmail(tmp_path, monkeypatch):
@@ -74,12 +76,7 @@ def test_apply_logs_each_decision_and_changes_gmail(tmp_path, monkeypatch):
 def test_main_prints_the_summary_then_the_error_and_exits_1(tmp_path, monkeypatch, capsys):
     mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
     mailbox.fail_modify = {"m2"}
-    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(lambda state_dir: mailbox))
-    monkeypatch.setattr(cli, "state_dir", lambda: tmp_path)
-    monkeypatch.setattr(cli, "make_engine", lambda kind: FakeEngine(lambda request: answers()))
-    config = tmp_path / "inbox-sorter.toml"
-    config.write_text(CONFIG)
-    argv = ["inbox-sorter", "--json", "run", "--apply", "--config", str(config)]
+    argv = ["inbox-sorter", *apply_args(tmp_path, monkeypatch, mailbox)]
     monkeypatch.setattr(cli.sys, "argv", argv)
 
     with pytest.raises(SystemExit) as exited:

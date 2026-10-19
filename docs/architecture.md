@@ -40,7 +40,7 @@ Rich or questionary (C-thin-cli).
 
 Modules marked **(exists)** are built. The others are planned.
 
-- `cli.py` **(exists)**: the `setup`, `run` and `undo` commands. Parses
+- `cli.py` **(exists)**: `setup` and `run`; `undo` comes with #11. Parses
   flags, builds the real Gmail client and decision engine, picks a
   reporter, maps errors to exit codes (C-exit-codes).
 - `config.py` **(exists)**: loads and validates `inbox-sorter.toml` into
