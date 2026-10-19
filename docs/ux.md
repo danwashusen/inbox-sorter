@@ -98,10 +98,10 @@ the run prints after the summary.
 `inbox-sorter undo <run-id>` previews reversing one applied run from the
 run log, and never signs in. `--apply` removes the labels the run added,
 `Sorter/_processed` included, and adds back the `INBOX` and `UNREAD` it
-removed. Mail a later run changed again is skipped.
+removed. Mail a later run logged again is skipped.
 
 1. `Undo · <DRY RUN|APPLY> · run <id> · <n> <to undo|undone> · <n> skipped`
-2. Label counts, skips by reason, then in a dry run the `--apply` command.
+2. Label counts, skips by reason, then a closing hint such as `--apply`.
 
 ## Plain mode
 
