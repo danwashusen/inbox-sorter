@@ -141,8 +141,8 @@ class Dashboard:
     flags and elapsed time come from it. The dashboard's own state sits
     behind one lock; nothing calls into Rich while holding it, since the
     refresh thread takes Rich's lock and then this one. The tally is read
-    unlocked: its summary() only indexes counts, so a frame may lag by one
-    event but never fails.
+    unlocked: its summary() only indexes counts, so a frame may be one event
+    out of step with the feed but never fails.
     """
 
     def __init__(

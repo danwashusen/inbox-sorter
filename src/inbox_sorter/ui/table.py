@@ -1,4 +1,4 @@
-"""The terminal run table: one row per decision, streamed as it arrives.
+"""The terminal run table: one row per decision, printed above the dashboard's panel.
 
 Plain text, readable in a monochrome terminal (R-monochrome-safe). No email
 body is ever printed.
@@ -27,7 +27,7 @@ GAP = "  "
 
 def planned_actions(decision: Decision) -> str:
     """Such as "+Receipts, archive, mark read"; Sorter/_processed is left out."""
-    actions = [f"+{label}" for label in decision.add_labels if label != PROCESSED_LABEL]
+    actions = [f"+{one_line(label)}" for label in decision.add_labels if label != PROCESSED_LABEL]
     if "INBOX" in decision.remove_labels:
         actions.append("archive")
     if "UNREAD" in decision.remove_labels:
@@ -36,7 +36,11 @@ def planned_actions(decision: Decision) -> str:
 
 
 class TableReporter:
-    """Writes the header, one row per message, then the finish or stop line."""
+    """The header, one row per message, then the finish or stop line.
+
+    Called, it writes them to ``out``; ``lines()`` returns them unwritten,
+    which is how the dashboard prints them above its panel.
+    """
 
     def __init__(self, out: TextIO) -> None:
         self.out = out
@@ -66,7 +70,7 @@ class TableReporter:
                 ]
                 return [_row(cells, planned_actions(decision))]
             case MessageFailed():
-                return [f"{event.message_id}{GAP}failed: {one_line(event.error)}"]
+                return [f"{one_line(event.message_id)}{GAP}failed: {one_line(event.error)}"]
             case RunFinished() if self.dry_run:
                 return [
                     f"Dry run finished: {event.decided} planned, {event.failed} failed. "
