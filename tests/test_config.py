@@ -21,7 +21,6 @@ from tests.factories import RECEIPTS, make_config
 PRD_EXAMPLE = """
 [run]
 max_messages = 50
-dry_run = true # default; pass --apply to change Gmail
 body_chars = 2000 # body text sent on the low-confidence retry; 0 turns the retry off
 
 [flags]
@@ -69,7 +68,7 @@ def test_prd_example_loads(tmp_path):
     config = load(tmp_path, PRD_EXAMPLE)
 
     assert config == Config(
-        run=RunSettings(max_messages=50, dry_run=True, body_chars=2000),
+        run=RunSettings(max_messages=50, body_chars=2000),
         flags=FlagSettings(needs_reply_min=0.7, today_min_score=1.5),
         categories=(
             Category(
@@ -97,11 +96,10 @@ def test_prd_example_loads(tmp_path):
 def test_omitted_tables_and_keys_take_defaults(tmp_path):
     assert load(tmp_path, ALERTS).run == RunSettings()
     assert load(tmp_path, ALERTS).flags == FlagSettings()
-    assert RunSettings().dry_run is True
 
     config = load(tmp_path, "[run]\nmax_messages = 10\n" + ALERTS)
 
-    assert config.run == RunSettings(max_messages=10, dry_run=True, body_chars=2000)
+    assert config.run == RunSettings(max_messages=10, body_chars=2000)
 
 
 def test_int_is_accepted_for_a_float(tmp_path):
@@ -208,6 +206,11 @@ def test_missing_default_config_names_its_absolute_path(tmp_path):
             "category 'alerts' has unknown key 'min_confidance'",
         ),
         ("[run]\nmax_mesages = 10\n" + ALERTS, "[run] has unknown key 'max_mesages'"),
+        (
+            "[run]\ndry_run = false\n" + ALERTS,
+            "[run] dry_run is no longer read; delete it. "
+            "Dry run is the default and --apply changes Gmail",
+        ),
         ('[engine]\nkind = "clef-local"\n' + ALERTS, "unknown table [engine]"),
         (
             ALERTS + ALERTS.replace('id = "alerts"', 'id = "notices"'),
@@ -256,7 +259,7 @@ AWKWARD = 'He said "hi" \\ back\nline\ttab\x01ctrl\x7fdel\b\f\r café 日本 Wor
     [
         make_config(),
         Config(
-            run=RunSettings(max_messages=7, dry_run=False, body_chars=0),
+            run=RunSettings(max_messages=7, body_chars=0),
             flags=FlagSettings(needs_reply_min=0.25, today_min_score=2.0),
             categories=(
                 Category(
@@ -290,7 +293,6 @@ def test_render_config_writes_tables_and_keys_in_order():
     assert text.splitlines() == [
         "[run]",
         "max_messages = 50",
-        "dry_run = true",
         "body_chars = 2000",
         "",
         "[flags]",

@@ -212,7 +212,7 @@ def test_unusable_created_names_are_asked_again(bad):
 
 def test_rerun_keeps_existing_entries_and_asks_only_about_new_labels():
     existing = Config(
-        run=RunSettings(max_messages=9, dry_run=False, body_chars=0),
+        run=RunSettings(max_messages=9, body_chars=0),
         flags=FlagSettings(needs_reply_min=0.4, today_min_score=1.0),
         categories=(
             RECEIPTS,
