@@ -74,7 +74,9 @@ def read_keys(
         try:
             ready, _, _ = select.select([fd], [], [], 0.2)
             key = os.read(fd, 1) if ready else None
-        except OSError:  # the terminal hung up or stdin closed: q is off, Ctrl-C still works
+        # The terminal hung up, or a read would block because the terminal is
+        # back in canonical mode as the run ends: q is off, Ctrl-C still works.
+        except OSError:
             return
         if key is None:
             continue
@@ -91,34 +93,46 @@ def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr
     A run in the background gets Ctrl-C handling only: changing or reading
     the terminal from a background process group would stop the process.
     Terminal access is best-effort: a terminal that hangs up loses the `q`
-    listener, never the run's outcome.
+    listener, never the run's outcome. The reader reads its own non-blocking
+    descriptor of the terminal, so it can never block the run's exit.
     """
     previous = signal.signal(signal.SIGINT, interrupt_handler(flag, notice))
     fd = sys.stdin.fileno() if _foreground_terminal() else None
     saved = None
+    reader_fd: int | None = None
     done = threading.Event()
     reader: threading.Thread | None = None
     try:
         if fd is not None:
             try:
+                # O_NONBLOCK on a private descriptor leaves stdin, shared with the shell, blocking.
+                reader_fd = os.open(os.ttyname(fd), os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY)
                 saved = termios.tcgetattr(fd)
                 tty.setcbreak(fd)  # ISIG stays on, so Ctrl-C still sends SIGINT
-            except termios.error:  # terminal gone; Ctrl-C still works
+            except (OSError, termios.error):  # terminal gone; Ctrl-C still works
                 saved = None
+                if reader_fd is not None:
+                    os.close(reader_fd)
+                    reader_fd = None
             else:
                 reader = threading.Thread(
-                    target=read_keys, args=(fd, flag, notice, done), name=READER_NAME, daemon=True
+                    target=read_keys,
+                    args=(reader_fd, flag, notice, done),
+                    name=READER_NAME,
+                    daemon=True,
                 )
                 reader.start()
         yield
     finally:
         signal.signal(signal.SIGINT, previous)
-        if fd is not None and saved is not None:
+        if saved is not None:
             with suppress(termios.error):  # a hung-up terminal has nothing to restore
                 termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         done.set()
         if reader is not None:
             reader.join()
+        if reader_fd is not None:
+            os.close(reader_fd)
 
 
 def _foreground_terminal() -> bool:

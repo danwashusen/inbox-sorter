@@ -180,3 +180,22 @@ def test_a_terminal_gone_before_the_run_starts_leaves_only_ctrl_c(terminal, monk
         assert signal.getsignal(signal.SIGINT) is not before
 
     assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_exit_never_waits_on_a_read_racing_the_terminal_restore(terminal, monkeypatch):
+    master, slave = terminal
+    monkeypatch.setattr(stop.os, "tcgetpgrp", lambda fd: os.getpgrp())
+    # select always says "ready", as it would if a key arrived just before the
+    # restore; after the restore no byte is readable without a newline.
+    monkeypatch.setattr(stop.select, "select", lambda r, w, x, timeout: (r, [], []))
+    rescue = threading.Timer(2, os.write, (master, b"\n"))  # unblocks a blocking read
+    rescue.start()
+    started = time.monotonic()
+
+    with listen_for_stop(StopFlag(), print):
+        pass
+
+    elapsed = time.monotonic() - started
+    rescue.cancel()
+    assert elapsed < 1
+    assert reader_threads() == []
