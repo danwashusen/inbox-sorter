@@ -51,20 +51,27 @@ def undo_total_record(run_id: str, apply: bool, undone: int, skipped: int, json_
     return record("undo", fields, json_lines)
 
 
+def undo_counts(plan: UndoPlan, outcomes: Sequence[UndoOutcome] | None) -> tuple[int, int, int]:
+    """Messages undone (or, in a dry run, to undo), skipped, and of those gone."""
+    if outcomes is None:
+        undone, gone = len(plan.steps), 0
+    else:
+        undone = sum(outcome.status == "undone" for outcome in outcomes)
+        gone = len(outcomes) - undone
+    return undone, len(plan.later_run) + len(plan.unchanged) + gone, gone
+
+
 def undo_lines(plan: UndoPlan, outcomes: Sequence[UndoOutcome] | None) -> list[str]:
     """The terminal lines; ``outcomes`` is None for a dry run."""
+    undone, skipped, gone = undo_counts(plan, outcomes)
     if outcomes is None:
         changes = [(step.restore, tuple(step.remove)) for step in plan.steps]
-        gone = 0
-        heading = f"Undo · DRY RUN · run {plan.run_id} · {len(changes)} to undo"
+        heading = f"Undo · DRY RUN · run {plan.run_id} · {undone} to undo"
         removed_title, restored_title = "labels to remove", "to restore"
     else:
-        undone = [outcome for outcome in outcomes if outcome.status == "undone"]
-        changes = [(outcome.restored, outcome.removed) for outcome in undone]
-        gone = len(outcomes) - len(undone)
-        heading = f"Undo · APPLY · run {plan.run_id} · {len(changes)} undone"
+        changes = [(o.restored, o.removed) for o in outcomes if o.status == "undone"]
+        heading = f"Undo · APPLY · run {plan.run_id} · {undone} undone"
         removed_title, restored_title = "labels removed", "restored"
-    skipped = len(plan.later_run) + len(plan.unchanged) + gone
     lines = [f"{heading} · {skipped} skipped"]
     removed = _counts(label for _, names in changes for label in names)
     if removed:

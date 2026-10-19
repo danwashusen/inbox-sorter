@@ -4,6 +4,7 @@ from inbox_sorter.ui.undo import (
     outcome_record,
     skipped_records,
     step_record,
+    undo_counts,
     undo_lines,
     undo_total_record,
 )
@@ -79,3 +80,11 @@ def test_nothing_to_undo_says_so_and_shows_labels_literally():
     ]
     odd = UndoPlan("r1", (UndoStep("m1", (), {"[bold]x\ny": "L1"}),), (), ())
     assert undo_lines(odd, None)[1] == "labels to remove: [bold]x y 1"
+
+
+def test_counts_add_gone_messages_to_the_skips():
+    gone = UndoOutcome("m1", "gone", (), ())
+    undone = UndoOutcome("m2", "undone", ("INBOX",), ())
+
+    assert undo_counts(PLAN, None) == (2, 3, 0)
+    assert undo_counts(PLAN, [gone, undone]) == (1, 4, 1)

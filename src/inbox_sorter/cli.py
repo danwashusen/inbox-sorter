@@ -37,6 +37,7 @@ from inbox_sorter.ui.undo import (
     outcome_record,
     skipped_records,
     step_record,
+    undo_counts,
     undo_lines,
     undo_total_record,
 )
@@ -286,12 +287,7 @@ def _print_undo(plan: UndoPlan, outcomes: list[UndoOutcome] | None, opts: CliOpt
         for line in undo_lines(plan, outcomes):
             print(line, flush=True)
         return
-    skipped = len(plan.later_run) + len(plan.unchanged)
-    if outcomes is None:
-        undone = len(plan.steps)
-    else:
-        undone = sum(outcome.status == "undone" for outcome in outcomes)
-        skipped += len(outcomes) - undone
+    undone, skipped, _ = undo_counts(plan, outcomes)
     total = undo_total_record(plan.run_id, outcomes is not None, undone, skipped, opts.json)
     print(total, flush=True)
 

@@ -123,6 +123,7 @@ GOOD = {"run": "r1", "id": "m1", "add": ["A"], "add_ids": ["Label_1"], "remove":
         json.dumps({**GOOD, "add": ["A", "A"], "add_ids": ["Label_1", "Label_2"]}),
         json.dumps({**GOOD, "remove": ["TRASH"]}),
         json.dumps({**GOOD, "remove": "INBOX"}),
+        json.dumps({**GOOD, "add": ["Inbox"], "add_ids": ["INBOX"]}),
     ],
 )
 def test_read_log_refuses_a_line_it_cannot_read_naming_it(tmp_path, bad):

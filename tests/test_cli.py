@@ -494,6 +494,19 @@ def test_undo_dry_run_prints_the_plan_and_never_signs_in(tmp_path, monkeypatch):
     assert (tmp_path / "runs.jsonl").read_text() == log  # undo writes nothing to the log
 
 
+def test_json_undo_prints_json_records(tmp_path, monkeypatch):
+    _, _, run_id = applied_run(tmp_path, monkeypatch)
+    no_sign_in(tmp_path, monkeypatch)
+
+    result = CliRunner().invoke(cli.app, ["--json", "undo", run_id])
+
+    assert result.exit_code == 0, result.output
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert [r["event"] for r in records] == ["planned", "planned", "undo"]
+    assert records[0]["remove"] == ["Receipts", "Sorter/_processed"]
+    assert records[-1]["mode"] == "dry-run"
+
+
 def test_undo_on_a_terminal_prints_lines_not_records(capsys):
     plan = cli.UndoPlan("r1", (), (), ("m1",))
 

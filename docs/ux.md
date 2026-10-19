@@ -126,7 +126,8 @@ order.
   reply=<n> today=<n> low=<n> elapsed=<seconds>
   review=Sorter/_low-confidence`, last
 
-`undo` prints the skips first, then one record per message, then a total:
+`undo` prints the skips, then one record per message, then a total;
+`--apply` adds the `progress` record:
 
 - `skipped id=<message-id> reason=<later-run|unchanged|gone>`
 - `planned` (dry run) or `undone id=<message-id> restore=<labels>

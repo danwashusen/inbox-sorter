@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from inbox_sorter.errors import UserError, error_reason
-from inbox_sorter.types import Decision
+from inbox_sorter.types import SYSTEM_LABELS, Decision
 
 RUN_LOG_NAME = "runs.jsonl"
 
@@ -130,6 +130,8 @@ def _parse(line: str) -> LoggedChange | None:
     if not all(_strings(value) for value in (add, add_ids, remove)):
         return None
     if len(add) != len(add_ids) or not set(remove) <= RESTORABLE:
+        return None
+    if SYSTEM_LABELS & set(add_ids):  # the writer adds only user labels; undo never strips INBOX
         return None
     added = dict(zip(add, add_ids, strict=True))
     if len(added) != len(add):  # the writer logs each name once
