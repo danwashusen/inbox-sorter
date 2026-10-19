@@ -48,8 +48,10 @@ One run of `inbox-sorter run` does the following:
    Ask the three questions below in one call.
 4. If category confidence is below its threshold, fetch the plain-text body
    and ask again with it. Use the second answer.
-5. Apply the category's actions and the flag labels.
-6. Add `Sorter/_processed` and append the decision to a local log.
+5. With `--apply`, append the decision to `runs.jsonl`. A dry run stops
+   here and changes nothing.
+6. Apply the actions, the flag labels and `Sorter/_processed` in one
+   message change.
 
 Clef returns a probability per option in one forward pass. There is no
 free-text output to parse.
@@ -119,7 +121,6 @@ classifies against, so tuning it is the main way to fix wrong answers.
 ```toml
 [run]
 max_messages = 50
-dry_run = true # default; pass --apply to change Gmail
 body_chars = 2000 # body text sent on the low-confidence retry; 0 turns the retry off
 
 [flags]
@@ -145,7 +146,8 @@ actions = ["label"]
 min_confidence = 0.0
 ```
 
-Disabled categories are not offered to clef. An omitted `[run]` or
+Only `run --apply` changes the mailbox; no config key does. Disabled
+categories are not offered to clef. An omitted `[run]` or
 `[flags]` table, or an omitted key in one, takes the value shown above;
 every `[[category]]` key is required.
 
@@ -167,8 +169,8 @@ R-dry-run-default.
 - R-dry-run-default: Dry run is the default and prints a table of planned
   actions.
 - R-apply-flag: `--apply` performs the actions through the Gmail API.
-- R-run-log: Append each decision to `runs.jsonl`: message ID, probabilities,
-  actions.
+- R-run-log: Append each applied decision to `runs.jsonl` in the state
+  directory: run ID, message ID, probabilities, labels added and removed.
 - R-undo: `inbox-sorter undo <run-id>` reverses the actions of one applied run.
 - R-oauth-modify-scope: OAuth uses the `gmail.modify` scope; tokens stay in a
   local file.

@@ -24,7 +24,6 @@ class ConfigError(UserError):
 @dataclass(frozen=True)
 class RunSettings:
     max_messages: int = 50
-    dry_run: bool = True
     body_chars: int = 2000
 
 
@@ -239,6 +238,11 @@ def _settings[T](cls: type[T], data: dict[str, Any], table: str, path: Path) -> 
     if not isinstance(raw, dict):
         raise ConfigError(f"{path}: [{table}] must be a table")
     known = {field.name: field for field in fields(cls)}
+    if table == "run" and "dry_run" in raw:  # removed by #10; only --apply changes Gmail
+        raise ConfigError(
+            f"{path}: [run] dry_run is no longer read; delete it. "
+            "Dry run is the default and --apply changes Gmail"
+        )
     unknown = [key for key in raw if key not in known]
     if unknown:
         raise ConfigError(f"{path}: [{table}] has unknown key {unknown[0]!r}")

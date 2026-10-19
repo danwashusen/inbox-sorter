@@ -24,7 +24,7 @@ engine, so tests swap both for fakes and clef can be replaced later.
                ▼                                     │ RunEvent
    setup.py   runner.py ──── triage.py ─────────────┘
       │          │   │          (pure decisions)
-      │          │   └──────── runlog.py ──► runs/<run-id>.jsonl
+      │          │   └──────── runlog.py ──► runs.jsonl
       ▼          ▼
    gmail.py   engine.py  (DecisionEngine protocol, neutral types)
    (Gmail API)    │
@@ -40,16 +40,15 @@ Rich or questionary (C-thin-cli).
 
 Modules marked **(exists)** are built. The others are planned.
 
-- `cli.py` **(exists)**: the `setup`, `run` and `undo` commands. Parses
+- `cli.py` **(exists)**: `setup` and `run`; `undo` comes with #11. Parses
   flags, builds the real Gmail client and decision engine, picks a
-  reporter, maps errors to exit codes (C-exit-codes). So far: `setup`, a
-  dry-run `run` and the shared `--plain`, `--json` and `--debug` options.
+  reporter, maps errors to exit codes (C-exit-codes).
 - `config.py` **(exists)**: loads and validates `inbox-sorter.toml` into
   typed dataclasses; writes it for `setup` (A-config-writer).
 - `gmail.py` **(exists)**: a `Mailbox` protocol plus the Gmail API
   implementation. Lists unprocessed inbox IDs, fetches metadata or
   plain-text body, manages labels, and applies one modify call per
-  message. So far it has the read methods only.
+  message. `LabelResolver` maps label names to IDs.
 - `types.py` **(exists)**: the core types below.
 - `errors.py` **(exists)**: `UserError`, the base of every expected
   failure the CLI reports as one line.
@@ -66,15 +65,16 @@ Modules marked **(exists)** are built. The others are planned.
   `Decision`. Holds every policy rule: thresholds, body retry, flags, and
   keeping flagged mail in the inbox.
 - `runner.py` **(exists)**: the run loop. Fetch, classify, retry,
-  decide, apply, log. Emits `RunEvent`s and checks a stop flag between
-  messages. So far it dry-runs: no apply, log or stop flag.
-- `runlog.py`: appends one JSON line per decision; reads a run back for
-  `undo`.
+  decide, log, apply. Emits `RunEvent`s and checks a stop flag between
+  messages. So far it has no stop flag.
+- `runlog.py` **(exists)**: one JSON line per applied decision, for `undo`.
+- `summary.py` **(exists)**: tallies `RunEvent`s into the run summary.
 - `setup.py` **(exists)**: re-sync, the wizard and the accuracy check.
 - `ui/dashboard.py`: renders `RunEvent`s as the live panel.
-- `ui/plain.py`, `ui/table.py`, `ui/prompts.py`, `ui/bars.py` and
-  `ui/accuracy.py` **(exist)**: plain lines, the dry-run table shown until
-  the panel lands, `setup` prompts, category bars and the accuracy report.
+- `ui/plain.py`, `ui/table.py`, `ui/prompts.py`, `ui/bars.py`,
+  `ui/accuracy.py` and `ui/summary.py` **(exist)**: plain lines, the run
+  table shown until the panel lands, `setup` prompts, category bars, the
+  accuracy report and the run summary.
 - `system.py`: `caffeinate` and notifications via subprocess.
 
 ## Core types
@@ -82,10 +82,9 @@ Modules marked **(exists)** are built. The others are planned.
 Plain frozen dataclasses in `types.py`, shared by every module.
 
 - `Email`: id, sender, subject, snippet, label IDs, and body when fetched.
-- `Answers` (planned): category probabilities, `needs_reply` probability
-  and `urgency` score, in engine-neutral form.
+- `Probabilities`: the category, `needs_reply` and `urgency` probabilities.
 - `Decision`: message ID, category, confidence, the two flags, labels to
-  add and remove, and whether it is low confidence or used the body.
+  add and remove, low confidence, body use and `Probabilities`.
 - `RunEvent`: `RunStarted`, `MessageDecided`, `MessageFailed` and
   `RunFinished` so far; a retrying variant comes with retries.
 
@@ -98,9 +97,9 @@ The loop lists IDs first (A-run-events), then works through them in order:
 3. If `triage` says confidence is low, `gmail` fetches the body and the
    engine answers again (R-body-retry).
 4. `triage` returns the `Decision`.
-5. `runlog` appends the decision. In dry run, the loop stops here.
-6. `gmail` applies one `messages.modify` call that adds the category,
-   flag and `Sorter/_processed` labels and removes `INBOX` or `UNREAD`.
+5. A dry run stops here; an apply run resolves labels, then `runlog` logs.
+6. `gmail` makes at most one `messages.modify`: add the category, flag
+   and `Sorter/_processed` labels it lacks; remove `INBOX` or `UNREAD`.
 
 A single modify call per message makes each message all-or-nothing.
 A crash leaves it unprocessed, so the next run retries it (R-resumable).
@@ -168,10 +167,8 @@ Switching engines has three consequences the design accounts for:
 
 ## Storage
 
-State lives in `~/Library/Application Support/inbox-sorter/`:
-
-- `token.json` and `client_secret.json` for OAuth.
-- `runs/<run-id>.jsonl`, one file per run, for the log and `undo`.
+State lives in `~/Library/Application Support/inbox-sorter/`: `token.json`
+and `client_secret.json` for OAuth, and `runs.jsonl`, the log for `undo`.
 
 The config file, `inbox-sorter.toml`, sits in the current directory so it
 can be versioned separately from state.
@@ -222,8 +219,8 @@ Accepted items move here with an `A-<slug>` ID.
 - A-mailbox-seam: Gmail access goes through the `Mailbox` protocol in
   `gmail.py`, with `GmailMailbox` and a test-only `FakeMailbox`. Reads
   are `list_unprocessed`, `list_by_label`, `get_message`, `get_body` and
-  `list_labels`; write methods come with the story that applies
-  decisions. Sign-in and reads raise `MailboxError`, never a Google
+  `list_labels` and `label_ids`; writes are `create_label` and `modify`,
+  by label ID. Gmail calls raise `MailboxError`, never a Google
   exception, with any HTTP status. The Google libraries are imported only
   inside the functions that call Gmail, so the core never loads them.
 - A-core-types: `Email`, `Decision` and the `RunEvent` variants
@@ -255,3 +252,6 @@ Accepted items move here with an `A-<slug>` ID.
 - A-accuracy-check: `check_accuracy` decides as `run` does, through
   `runner.decide_message`; a guess is right if the message has its label.
 - A-category-bars: `ui/bars.py` draws the bars for setup and the dashboard.
+- A-run-log: only apply runs log (`runs.jsonl`, synced), then at most 1 modify.
+- A-label-resolver: once per run; creates ancestors first; exact-case (#19).
+- A-run-summary: `summary.SummaryTally` tallies; `ui/summary.py` renders.

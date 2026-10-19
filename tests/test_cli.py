@@ -40,9 +40,76 @@ def test_plain_stdout_holds_only_records_even_when_sign_in_prints(tmp_path, monk
 
     assert result.exit_code == 0, result.output
     records = [json.loads(line) for line in result.stdout.splitlines()]
-    assert [r["event"] for r in records] == ["started", "decided", "decided", "finished"]
+    assert [r["event"] for r in records] == [
+        "started", "decided", "decided", "finished", "total", "summary",
+    ]  # fmt: skip
+    assert records[-1]["mode"] == "dry-run"
     assert "Please visit this URL" in result.stderr
     assert "loading the clef model" in result.stderr
+    assert not (tmp_path / "runs.jsonl").exists()
+
+
+def apply_args(tmp_path, monkeypatch, mailbox):
+    """Fake sign-in and the model load, write CONFIG, and return the apply run's arguments."""
+    config = setup_cli(tmp_path, monkeypatch, mailbox, FakeEngine(lambda request: answers()))
+    config.write_text(CONFIG)
+    return ["--json", "run", "--apply", "--config", str(config)]
+
+
+def apply_cli(tmp_path, monkeypatch, mailbox):
+    return CliRunner().invoke(cli.app, apply_args(tmp_path, monkeypatch, mailbox))
+
+
+def test_apply_logs_each_decision_and_changes_gmail(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+
+    result = apply_cli(tmp_path, monkeypatch, mailbox)
+
+    assert result.exit_code == 0, result.output
+    lines = (tmp_path / "runs.jsonl").read_text().splitlines()
+    assert [json.loads(line)["id"] for line in lines] == ["m1", "m2"]
+    assert len(mailbox.modify_calls) == 2
+    summary = json.loads(result.stdout.splitlines()[-1])
+    assert (summary["event"], summary["mode"], summary["decided"]) == ("summary", "apply", 2)
+
+
+def test_main_prints_the_summary_then_the_error_and_exits_1(tmp_path, monkeypatch, capsys):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    mailbox.fail_modify = {"m2"}
+    argv = ["inbox-sorter", *apply_args(tmp_path, monkeypatch, mailbox)]
+    monkeypatch.setattr(cli.sys, "argv", argv)
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main()
+
+    out, err = capsys.readouterr()
+    assert exited.value.code == 1
+    assert json.loads(out.splitlines()[-1])["event"] == "summary"
+    assert "error: modify failed for 'm2'" in err
+
+
+def test_an_error_before_the_run_starts_prints_no_summary(tmp_path, monkeypatch):
+    class Unlistable(FakeMailbox):
+        def list_unprocessed(self, page_token=None, page_size=100):
+            raise MailboxError("Gmail request failed (500): boom", status=500)
+
+    result = apply_cli(tmp_path, monkeypatch, Unlistable([make_email("m1")]))
+
+    assert result.exit_code == 1
+    assert str(result.exception) == "Gmail request failed (500): boom"
+    assert result.stdout == ""
+
+
+def test_a_fatal_error_mid_apply_still_prints_the_summary(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    mailbox.fail_modify = {"m2"}
+
+    result = apply_cli(tmp_path, monkeypatch, mailbox)
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, MailboxError)
+    events = [json.loads(line)["event"] for line in result.stdout.splitlines()]
+    assert events == ["started", "decided", "total", "summary"]
 
 
 def test_no_enabled_category_names_the_config_file(tmp_path):

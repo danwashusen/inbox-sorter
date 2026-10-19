@@ -47,6 +47,19 @@ def test_table_streams_header_rows_and_finish_line():
     assert "SECRET" not in out.getvalue()
 
 
+def test_an_apply_run_names_the_mode_and_what_changed():
+    out = io.StringIO()
+    report = TableReporter(out)
+
+    report(RunStarted("20261019-140211", dry_run=False, engine="clef-local", total=1))
+    report(RunFinished("20261019-140211", decided=1, failed=0))
+
+    lines = out.getvalue().splitlines()
+    assert lines[0] == "APPLY · clef-local · 1 messages · run 20261019-140211"
+    assert lines[1].split() == ["Sender", "Subject", "Category", "Conf", "Actions"]
+    assert lines[2] == "Apply finished: 1 changed, 0 failed."
+
+
 def test_long_cells_are_cut_with_an_ellipsis():
     out = io.StringIO()
     email = make_email(subject="x" * 50)

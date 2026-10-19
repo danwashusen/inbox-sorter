@@ -1,4 +1,4 @@
-"""The terminal dry-run table: one row per decision, streamed as it arrives.
+"""The terminal run table: one row per decision, streamed as it arrives.
 
 Plain text, readable in a monochrome terminal (R-monochrome-safe). No email
 body is ever printed.
@@ -18,7 +18,7 @@ from inbox_sorter.types import (
 )
 from inbox_sorter.ui.plain import unsafe_char
 
-# (title, width); Planned actions takes the rest of the line.
+# (title, width); the actions column takes the rest of the line.
 COLUMNS = (("Sender", 20), ("Subject", 36), ("Category", 14), ("Conf", 4))
 GAP = "  "
 
@@ -38,14 +38,18 @@ class TableReporter:
 
     def __init__(self, out: TextIO) -> None:
         self.out = out
+        self.dry_run = True
 
     def __call__(self, event: RunEvent) -> None:
         match event:
             case RunStarted():
+                self.dry_run = event.dry_run
+                mode = "DRY RUN" if event.dry_run else "APPLY"
                 self._write(
-                    f"DRY RUN · {event.engine} · {event.total} messages · run {event.run_id}"
+                    f"{mode} · {event.engine} · {event.total} messages · run {event.run_id}"
                 )
-                self._write(_row([title for title, _ in COLUMNS], "Planned actions"))
+                actions = "Planned actions" if event.dry_run else "Actions"
+                self._write(_row([title for title, _ in COLUMNS], actions))
             case MessageDecided(email=email, decision=decision):
                 cells = [
                     email.sender,
@@ -56,11 +60,13 @@ class TableReporter:
                 self._write(_row(cells, planned_actions(decision)))
             case MessageFailed():
                 self._write(f"{event.message_id}{GAP}failed: {one_line(event.error)}")
-            case RunFinished():
+            case RunFinished() if self.dry_run:
                 self._write(
                     f"Dry run finished: {event.decided} planned, {event.failed} failed. "
                     "Gmail was not changed."
                 )
+            case RunFinished():
+                self._write(f"Apply finished: {event.decided} changed, {event.failed} failed.")
 
     def _write(self, line: str) -> None:
         print(line, file=self.out, flush=True)

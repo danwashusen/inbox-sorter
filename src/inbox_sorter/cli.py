@@ -16,9 +16,11 @@ from inbox_sorter.engines import make_engine
 from inbox_sorter.errors import UserError, error_reason
 from inbox_sorter.gmail import GmailMailbox
 from inbox_sorter.questions import build_questions
+from inbox_sorter.runlog import RUN_LOG_NAME, RunLog
 # Not `from inbox_sorter import setup`: the setup command below would shadow it.
 from inbox_sorter.setup import SetupCancelled, check_accuracy, run_setup, sample_ids
 from inbox_sorter.storage import state_dir
+from inbox_sorter.summary import SummaryTally
 from inbox_sorter.ui.accuracy import (
     ACCURACY_STOPPED,
     CONFIG_KEPT,
@@ -29,6 +31,7 @@ from inbox_sorter.ui.accuracy import (
 )
 from inbox_sorter.ui.plain import PlainReporter
 from inbox_sorter.ui.prompts import CANCELLED, LinePrompter, MenuPrompter
+from inbox_sorter.ui.summary import print_summary, summary_records
 from inbox_sorter.ui.table import TableReporter, one_line
 
 # Plain-text help and errors; Rich is reserved for ui/ (the setup report and the run dashboard).
@@ -74,8 +77,14 @@ def run(
         int | None,
         typer.Option("--limit", min=1, help="Decide at most N messages instead of max_messages."),
     ] = None,
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply", help="Change Gmail: log each decision, then apply it. Without it, a dry run."
+        ),
+    ] = False,
 ) -> None:
-    """Show what the sorter would do to unprocessed inbox mail. Changes nothing in Gmail."""
+    """Sort unprocessed inbox mail. A dry run unless --apply is given."""
     opts: CliOptions = ctx.obj
     path = resolve_config_path(config)
     cfg = load_config(path)
@@ -85,8 +94,9 @@ def run(
         raise ConfigError(f"{path}: {error}") from error  # name the file, as load_config does
     # Sign-in and the model load may print (the OAuth prompt does); keep
     # stdout for the reporter's records (C-plain-output).
+    state = state_dir()
     with redirect_stdout(sys.stderr):
-        mailbox = GmailMailbox.connect(state_dir())
+        mailbox = GmailMailbox.connect(state)
         engine = _load_engine()
 
     report = (
@@ -94,13 +104,38 @@ def run(
         if opts.plain
         else TableReporter(sys.stdout)
     )
+    tally = SummaryTally(cfg)
+    events = runner.run(
+        mailbox,
+        engine,
+        cfg,
+        questions,
+        limit=limit,
+        run_id=runner.new_run_id(),
+        apply=apply,
+        log=RunLog(state / RUN_LOG_NAME) if apply else None,
+    )
     try:
-        for event in runner.run(
-            mailbox, engine, cfg, questions, limit=limit, run_id=runner.new_run_id()
-        ):
+        for event in events:
+            tally(event)
             report(event)
+    except UserError:
+        # An apply run that fails midway has changed earlier messages; show
+        # its run ID and totals before the error.
+        if tally.started:
+            _print_summary(tally, opts)
+        raise
     finally:
         engine.close()
+    _print_summary(tally, opts)
+
+
+def _print_summary(tally: SummaryTally, opts: CliOptions) -> None:
+    if opts.plain:
+        for line in summary_records(tally.summary(), opts.json):
+            print(line, flush=True)
+    else:
+        print_summary(tally.summary(), sys.stdout)
 
 
 @app.command()

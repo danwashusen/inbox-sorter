@@ -10,6 +10,7 @@ from inbox_sorter.types import (
     TODAY_LABEL,
     Decision,
     Email,
+    Probabilities,
 )
 
 
@@ -62,6 +63,11 @@ def decide(email: Email, response: DecisionResponse, config: Config, used_body: 
         used_body=used_body,
         add_labels=tuple(add),
         remove_labels=tuple(remove),
+        probabilities=Probabilities(
+            category=dict(answer.probabilities),
+            needs_reply=reply.probability,
+            urgency=tuple(urgency.probabilities),
+        ),
     )
 
 
