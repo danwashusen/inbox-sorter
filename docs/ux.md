@@ -95,10 +95,11 @@ the run prints after the summary.
 
 ## Undo
 
-`inbox-sorter undo <run-id>` previews reversing one applied run, without
-signing in. `--apply` removes the labels the run added, `Sorter/_processed`
-included, and restores `INBOX` and `UNREAD`. Mail a later run logged again
-is skipped. A Ctrl-C or Gmail error shows the counts and how to finish.
+`inbox-sorter undo <run-id>` previews undoing one applied run, without signing
+in. `--apply` removes the labels the run added, `Sorter/_processed` included,
+and restores the `INBOX` and `UNREAD` the run removed. Mail a later run logged,
+or deleted since (`gone`), is skipped. After sign-in, any other Gmail error or a
+Ctrl-C shows the counts and how to finish; a Ctrl-C at sign-in shows only how.
 
 1. `Undo · <DRY RUN|APPLY> · run <id> · <n> <to undo|undone> · <n> skipped`
 2. Label counts, skips by reason, then a closing hint such as `--apply`.
@@ -109,9 +110,8 @@ When output is not a terminal, or with `--plain`, the run prints one line
 per decision and a periodic progress line instead of the panel. The
 format is stable so it can be piped to a file or `grep`.
 
-The shared options go before the command: `inbox-sorter --plain run`.
-Each line is a logfmt record: its name, then `key=value` pairs in a fixed
-order.
+The shared options go before the command: `inbox-sorter --plain run`. Each line
+is a logfmt record: its name, then `key=value` pairs in a fixed order.
 
 - `started run=<run-id> mode=<dry-run|apply> engine=<engine> total=<n>`
 - `decided id=<message-id> category=<id> confidence=<0.00> reply=<bool>
@@ -126,8 +126,8 @@ order.
   reply=<n> today=<n> low=<n> elapsed=<seconds>
   review=Sorter/_low-confidence`, last
 
-`undo` writes the log's skips, then one record per message (`gone` under
-`--apply`), then a total; `--apply` adds the `progress` record:
+`undo` prints the skips it found in the log, then one record per message (`gone`
+under `--apply`), then a total; `--apply` adds the `progress` record:
 
 - `skipped id=<message-id> reason=<later-run|unchanged|gone>`
 - `planned` (dry run) or `undone id=<message-id> restore=<labels>
