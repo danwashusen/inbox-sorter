@@ -133,3 +133,16 @@ def test_a_stopped_run_says_what_is_left_in_each_mode():
     assert lines[5] == (
         "Stopped: 2 changed, 0 failed, 3 left. Run the same command again to resume."
     )
+
+
+def test_lines_returns_the_header_and_writes_nothing():
+    out = io.StringIO()
+    report = TableReporter(out)
+
+    lines = report.lines(RunStarted("r1", dry_run=False, engine="clef-local", total=3))
+
+    assert lines[0] == "APPLY · clef-local · 3 messages · run r1"
+    assert lines[1].split() == ["Sender", "Subject", "Category", "Conf", "Actions"]
+    assert len(lines) == 2
+    assert out.getvalue() == ""
+    assert report.dry_run is False

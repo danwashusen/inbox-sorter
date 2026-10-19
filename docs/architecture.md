@@ -66,12 +66,11 @@ The others are planned.
   applied decision, and `undo`, which reverses a run's own lines.
 - `summary.py` **(exists)**: tallies `RunEvent`s into the run summary.
 - `setup.py` **(exists)**: re-sync, the wizard and the accuracy check.
-- `ui/dashboard.py`: renders `RunEvent`s as the live panel.
-- `ui/plain.py`, `ui/table.py`, `ui/prompts.py`, `ui/bars.py`,
-  `ui/accuracy.py`, `ui/summary.py`, `ui/progress.py` and `ui/undo.py`
-  **(exist)**: plain lines, the run table shown until the panel lands,
-  `setup` prompts, category bars, the accuracy report, the run summary,
-  progress bars and the undo output.
+- `pace.py` and `ui/dashboard.py` **(exist)**: rate and ETA; the live panel.
+- `ui/plain.py`, `ui/table.py`, `ui/prompts.py`, `ui/bars.py`, `ui/accuracy.py`,
+  `ui/summary.py`, `ui/progress.py` and `ui/undo.py` **(exist)**: plain lines,
+  the table rows printed above the panel, `setup` prompts, category bars, the
+  accuracy report, the run summary, progress bars and the undo output.
 - `system.py` and `stop.py` **(exist)**: `caffeinate`, notifications, and
   the stop flag with its Ctrl-C and `q` listeners.
 
@@ -253,5 +252,6 @@ Accepted items move here with an `A-<slug>` ID.
 - A-run-log: only apply runs log (`runs.jsonl`, synced), then at most 1 modify.
 - A-label-resolver: once per run; creates ancestors first; exact-case (#19).
 - A-run-summary: `summary.SummaryTally` tallies; `ui/summary.py` renders.
+- A-dashboard: `ui/dashboard.py` panel from `RunEvent`s, ETA from `pace.Pace`.
 - A-long-runs: `runner.run` checks `stop.StopFlag` before each message, ends
   a stop with `RunStopped`, and retries transient errors, yielding `Retrying`.
