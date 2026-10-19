@@ -3,8 +3,7 @@
 No email content is ever printed: only label names, category IDs and counts.
 """
 
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from typing import TextIO
 
 from rich.console import Console
@@ -104,27 +103,39 @@ def print_accuracy(report: AccuracyReport, out: TextIO) -> None:
             console.print(Text(f"{actual} → {predicted}  {confusion.count}"))
 
 
-@contextmanager
-def AccuracyProgress(
-    plain: bool, json_lines: bool, out: TextIO
-) -> Iterator[Callable[[int, int], None]]:
-    """Yield the check's progress callback: a transient bar, or plain progress records."""
-    if plain:
+class AccuracyProgress:
+    """A context manager giving the check's progress callback.
 
-        def write(done: int, total: int) -> None:
-            # The last message is followed by the report, not progress.
-            if done % PROGRESS_EVERY == 0 and done != total:
-                print(progress_line(done, total, json_lines), file=out, flush=True)
+    On a terminal it is a transient Rich bar; in plain mode it writes a
+    progress record every 10th message except the last, as ``run`` does.
+    """
 
-        yield write
-        return
+    def __init__(self, plain: bool, json_lines: bool, out: TextIO) -> None:
+        self.plain = plain
+        self.json_lines = json_lines
+        self.out = out
+        self._bar: Progress | None = None
 
-    with Progress(
-        TextColumn("checking accuracy"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        console=Console(file=out, highlight=False),
-        transient=True,
-    ) as progress:
-        task = progress.add_task("", total=None)
-        yield lambda done, total: progress.update(task, completed=done, total=total)
+    def __enter__(self) -> Callable[[int, int], None]:
+        if self.plain:
+            return self._write
+        self._bar = Progress(
+            TextColumn("checking accuracy"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            console=Console(file=self.out, highlight=False),
+            transient=True,
+        )
+        self._bar.__enter__()
+        task = self._bar.add_task("", total=None)
+        bar = self._bar
+        return lambda done, total: bar.update(task, completed=done, total=total)
+
+    def __exit__(self, *exc: object) -> None:
+        if self._bar is not None:
+            self._bar.__exit__(None, None, None)
+
+    def _write(self, done: int, total: int) -> None:
+        # The last message is followed by the report, not progress.
+        if done % PROGRESS_EVERY == 0 and done != total:
+            print(progress_line(done, total, self.json_lines), file=self.out, flush=True)

@@ -128,6 +128,7 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
         result = run_setup(mailbox, prompter, existing)
     except KeyboardInterrupt:
         raise SetupCancelled(CANCELLED) from None
+    enabled = any(category.enabled for category in result.config.categories)
     if not result.changed:
         if existing is None:
             print("no categories accepted; nothing was written")
@@ -144,9 +145,9 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
         labels = {category.id: category.gmail_label for category in result.config.categories}
         for category_id in result.disabled:
             print(f"- {category_id} (label {one_line(labels[category_id])} was deleted)")
-        if not any(category.enabled for category in result.config.categories):
+        if not enabled:
             print("note: no category is enabled; run refuses this config until one is")
-    if not any(category.enabled for category in result.config.categories):
+    if not enabled:
         return
 
     # The accuracy check runs after the write, so a failed model load or a
@@ -166,13 +167,13 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
                 )
         finally:
             engine.close()
+        if opts.plain:
+            for line in accuracy_records(report, opts.json):
+                print(line)
+        else:
+            print_accuracy(report, sys.stdout)
     except KeyboardInterrupt:
         raise UserError(ACCURACY_STOPPED) from None
-    if opts.plain:
-        for line in accuracy_records(report, opts.json):
-            print(line)
-    else:
-        print_accuracy(report, sys.stdout)
 
 
 def _load_engine() -> DecisionEngine:
