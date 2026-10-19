@@ -1,9 +1,18 @@
 """Run Cloudflare clef in process on the local GPU (MPS) or CPU."""
 
+import logging
 import sys
+from contextlib import nullcontext
 
 from inbox_sorter.engine import DecisionRequest, DecisionResponse
 from inbox_sorter.engines.systemone import from_response_body, to_request_body
+
+
+TORCH_REDIRECTS_LOGGER = "torch.distributed.elastic.multiprocessing.redirects"
+
+
+def _errors_only(record: logging.LogRecord) -> bool:
+    return record.levelno >= logging.ERROR
 
 
 class ClefLocalEngine:
@@ -13,8 +22,23 @@ class ClefLocalEngine:
         # Heavy imports stay inside the adapter so the core never needs torch.
         import torch
         from huggingface_hub import snapshot_download
+        from huggingface_hub.errors import LocalEntryNotFoundError
+        from huggingface_hub.utils import disable_progress_bars
+        from transformers.utils import logging as transformers_logging
 
-        path = snapshot_download(model_id)
+        # Quiet the load: no progress bars once the weights are on disk, and no
+        # library warnings (slower-kernel fallbacks) or torch's macOS note.
+        # A first download still shows its progress.
+        transformers_logging.set_verbosity_error()
+        transformers_logging.disable_progress_bar()
+        logging.getLogger(TORCH_REDIRECTS_LOGGER).addFilter(_errors_only)
+        try:
+            snapshot_download(model_id, local_files_only=True)
+            bars = disable_progress_bars()
+        except LocalEntryNotFoundError:
+            bars = nullcontext()
+        with bars:
+            path = snapshot_download(model_id)  # still fetches a newer revision
         # The model's loader ships as a module inside the model repo.
         if path not in sys.path:
             sys.path.insert(0, path)
