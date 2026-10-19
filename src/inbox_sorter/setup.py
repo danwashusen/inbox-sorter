@@ -1,12 +1,15 @@
-"""The setup wizard: build the category list from existing Gmail labels (prd.md §Setup).
+"""The setup wizard and its accuracy check (prd.md §Setup).
 
 Reads Gmail only (R-setup-read-only) and never writes the config: ``run_setup``
 returns the merged config and the CLI writes it. The owner is reached through
 a ``Prompter``, which ``ui/prompts.py`` implements (A-setup-prompter).
+``check_accuracy`` then decides mail that already carries each enabled
+category's label, as ``run`` would, and scores the guesses (A-accuracy-check).
 """
 
 import re
-from collections.abc import Sequence
+from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol
 
@@ -20,11 +23,15 @@ from inbox_sorter.config import (
     Source,
     check_category,
 )
+from inbox_sorter.engine import DecisionEngine, Question
 from inbox_sorter.errors import UserError
 from inbox_sorter.gmail import LabelInfo, Mailbox, MailboxError
+from inbox_sorter.runner import decide_message, require_local
 from inbox_sorter.types import SORTER_PREFIX, SYSTEM_LABELS, Email
 
 SAMPLE_SIZE = 10  # newest messages shown per label (R-setup-list-labels: 5 to 10)
+ACCURACY_SAMPLE_SIZE = 10  # newest labelled messages decided per enabled category
+CONFUSION_LIMIT = 5  # most common confusions reported
 
 # Every preset applies the label, so no action hides mail without one (prd.md §Safety).
 SETUP_ACTION_PRESETS: tuple[tuple[Action, ...], ...] = (
@@ -69,6 +76,36 @@ class SetupResult:
     @property
     def changed(self) -> bool:
         return bool(self.added or self.disabled)
+
+
+@dataclass(frozen=True)
+class CategoryAccuracy:
+    category: str  # the category ID
+    gmail_label: str
+    sampled: int  # messages decided (a 404-skipped one is not counted)
+    correct: int  # of those, guesses the message's own labels agree with
+
+
+@dataclass(frozen=True)
+class Confusion:
+    actual: str  # the category ID the message was sampled under
+    predicted: str  # the category ID the engine chose
+    count: int
+
+
+@dataclass(frozen=True)
+class AccuracyReport:
+    engine: str
+    categories: tuple[CategoryAccuracy, ...]  # every enabled category, in config order
+    confusions: tuple[Confusion, ...]  # most common first, at most CONFUSION_LIMIT
+
+    @property
+    def sampled(self) -> int:
+        return sum(category.sampled for category in self.categories)
+
+    @property
+    def correct(self) -> int:
+        return sum(category.correct for category in self.categories)
 
 
 def candidate_labels(labels: Sequence[LabelInfo], existing: Config | None) -> list[LabelInfo]:
@@ -154,6 +191,81 @@ def run_setup(mailbox: Mailbox, prompter: Prompter, existing: Config | None) -> 
         added=tuple(added),
         disabled=disabled,
         unchanged=len(categories) - len(disabled),
+    )
+
+
+def sample_ids(mailbox: Mailbox, config: Config) -> dict[str, list[str]]:
+    """Each enabled category's newest labelled message IDs, in config order; [] when none."""
+    return {
+        category.id: mailbox.list_by_label(category.gmail_label, ACCURACY_SAMPLE_SIZE)
+        for category in config.categories
+        if category.enabled
+    }
+
+
+def check_accuracy(
+    mailbox: Mailbox,
+    engine: DecisionEngine,
+    config: Config,
+    questions: dict[str, Question],
+    samples: dict[str, list[str]],
+    *,
+    progress: Callable[[int, int], None] | None = None,
+) -> AccuracyReport:
+    """Decide each sampled message as ``run`` would and score it against its labels.
+
+    A guess is correct when the message carries the chosen category's label,
+    so mail with two configured labels is correct under either. A message
+    sampled under two categories is decided once. Reads Gmail only.
+    """
+    require_local(engine)
+    label_ids = {label.name: label.id for label in mailbox.list_labels()}
+    category_label = {category.id: category.gmail_label for category in config.categories}
+
+    distinct = list(dict.fromkeys(mid for ids in samples.values() for mid in ids))
+    chosen: dict[str, str | None] = {}  # message ID -> chosen category, None if skipped
+    carried: dict[str, frozenset[str]] = {}
+    for done, message_id in enumerate(distinct, start=1):
+        try:
+            email, decision = decide_message(mailbox, engine, config, questions, message_id)
+        except MailboxError as error:
+            if error.status != 404:  # only a message deleted since listing is skipped
+                raise
+            chosen[message_id] = None
+        else:
+            chosen[message_id] = decision.category
+            carried[message_id] = email.label_ids
+        if progress is not None:
+            progress(done, len(distinct))
+
+    categories = []
+    confusions: Counter[tuple[str, str]] = Counter()
+    for category in config.categories:
+        if not category.enabled:
+            continue
+        sampled = correct = 0
+        for message_id in samples.get(category.id, []):
+            predicted = chosen[message_id]
+            if predicted is None:
+                continue
+            sampled += 1
+            if label_ids.get(category_label[predicted]) in carried[message_id]:
+                correct += 1
+            else:
+                confusions[(category.id, predicted)] += 1
+        categories.append(CategoryAccuracy(category.id, category.gmail_label, sampled, correct))
+
+    order = {category.id: index for index, category in enumerate(config.categories)}
+    ranked = sorted(
+        confusions.items(), key=lambda item: (-item[1], order[item[0][0]], order[item[0][1]])
+    )
+    return AccuracyReport(
+        engine=engine.name,
+        categories=tuple(categories),
+        confusions=tuple(
+            Confusion(actual, predicted, count)
+            for (actual, predicted), count in ranked[:CONFUSION_LIMIT]
+        ),
     )
 
 

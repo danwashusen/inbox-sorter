@@ -3,19 +3,28 @@ from dataclasses import replace
 import pytest
 
 from inbox_sorter.config import Category, Config, FlagSettings, RunSettings
+from inbox_sorter.engines.fake import FakeEngine
+from inbox_sorter.errors import UserError
 from inbox_sorter.gmail import LabelInfo, MailboxError
+from inbox_sorter.questions import build_questions
 from inbox_sorter.setup import (
+    ACCURACY_SAMPLE_SIZE,
+    CONFUSION_LIMIT,
     SAMPLE_SIZE,
     SETUP_ACTION_PRESETS,
+    CategoryAccuracy,
+    Confusion,
     SetupCancelled,
     candidate_labels,
     category_id,
+    check_accuracy,
     default_min_confidence,
     deleted_label_ids,
     merge,
     run_setup,
+    sample_ids,
 )
-from tests.factories import ALERTS, RECEIPTS, make_config, make_email
+from tests.factories import ALERTS, RECEIPTS, answers, make_config, make_email
 from tests.fake_mailbox import FakeMailbox
 
 
@@ -290,3 +299,226 @@ def test_cancelling_a_prompt_propagates():
 
     with pytest.raises(SetupCancelled):
         run_setup(FakeMailbox(labels=[label("Bills")]), prompter, None)
+
+
+# Accuracy check: Receipts and Sorter/Alerts exist in Gmail as id-<name>.
+ACCURACY_LABELS = [label("Receipts"), label("Sorter/Alerts")]
+
+
+def by_subject(request):
+    """Guess alerts for a subject mentioning an alert, else receipts."""
+    return answers("alerts" if "alert" in request.state["subject"].lower() else "receipts")
+
+
+def receipt(id, *labels):
+    return make_email(id, labels=labels or ("id-Receipts",), subject=f"Order {id}")
+
+
+def alert(id, *labels):
+    return make_email(id, labels=labels or ("id-Sorter/Alerts",), subject=f"Alert {id}")
+
+
+def accuracy(mailbox, engine=None, config=None, **kwargs):
+    config = config or make_config()
+    engine = engine or FakeEngine(by_subject)
+    samples = sample_ids(mailbox, config)
+    return check_accuracy(mailbox, engine, config, build_questions(config), samples, **kwargs)
+
+
+def test_every_right_guess_scores_each_category_in_full():
+    emails = [receipt(f"r{i}") for i in range(10)] + [alert(f"a{i}") for i in range(10)]
+
+    report = accuracy(FakeMailbox(emails, labels=ACCURACY_LABELS))
+
+    assert report.categories == (
+        CategoryAccuracy("receipts", "Receipts", 10, 10),
+        CategoryAccuracy("alerts", "Sorter/Alerts", 10, 10),
+    )
+    assert report.confusions == ()
+    assert (report.sampled, report.correct, report.engine) == (20, 20, "fake")
+
+
+def test_a_wrong_guess_is_a_confusion_from_the_sampled_category():
+    # A Receipts-labelled message whose subject reads like an alert.
+    emails = [make_email("r1", labels=("id-Receipts",), subject="Alert: card charged")]
+
+    report = accuracy(FakeMailbox(emails, labels=ACCURACY_LABELS))
+
+    assert report.categories[0] == CategoryAccuracy("receipts", "Receipts", 1, 0)
+    assert report.confusions == (Confusion("receipts", "alerts", 1),)
+
+
+def test_a_message_with_both_labels_is_right_either_way_and_decided_once():
+    engine = FakeEngine(by_subject)
+    emails = [alert("m1", "id-Receipts", "id-Sorter/Alerts")]
+
+    report = accuracy(FakeMailbox(emails, labels=ACCURACY_LABELS), engine)
+
+    assert [(c.sampled, c.correct) for c in report.categories] == [(1, 1), (1, 1)]
+    assert report.confusions == ()
+    assert len(engine.requests) == 1
+
+
+def test_only_the_newest_messages_are_sampled():
+    emails = [receipt(f"r{i}") for i in range(ACCURACY_SAMPLE_SIZE + 2)]  # newest first
+    engine = FakeEngine(by_subject)
+
+    report = accuracy(FakeMailbox(emails, labels=ACCURACY_LABELS), engine)
+
+    assert report.categories[0].sampled == ACCURACY_SAMPLE_SIZE
+    assert [r.state["subject"] for r in engine.requests] == [
+        f"Order r{i}" for i in range(ACCURACY_SAMPLE_SIZE)
+    ]
+
+
+def test_a_category_without_labelled_mail_is_listed_with_nothing_sampled():
+    # Sorter/Alerts does not exist in Gmail yet.
+    report = accuracy(FakeMailbox([receipt("r1")], labels=[label("Receipts")]))
+
+    assert report.categories[1] == CategoryAccuracy("alerts", "Sorter/Alerts", 0, 0)
+
+
+def test_a_guess_whose_label_does_not_exist_yet_is_never_right():
+    emails = [make_email("r1", labels=("id-Receipts",), subject="Alert: card charged")]
+
+    report = accuracy(FakeMailbox(emails, labels=[label("Receipts")]))
+
+    assert report.categories[0] == CategoryAccuracy("receipts", "Receipts", 1, 0)
+    assert report.confusions == (Confusion("receipts", "alerts", 1),)
+
+
+def test_a_disabled_category_is_neither_sampled_nor_offered():
+    engine = FakeEngine(lambda request: answers("receipts"))
+    config = make_config(RECEIPTS, replace(ALERTS, enabled=False))
+    emails = [receipt("r1"), alert("a1")]
+
+    report = accuracy(FakeMailbox(emails, labels=ACCURACY_LABELS), engine, config)
+
+    assert [c.category for c in report.categories] == ["receipts"]
+    assert [r.state["subject"] for r in engine.requests] == ["Order r1"]
+    assert set(engine.requests[0].questions["category"].options) == {"receipts"}
+
+
+class Deleting(FakeMailbox):
+    """Fails get_message, or get_body, for one ID with a given status."""
+
+    def __init__(self, *args, missing="", status=404, body=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.missing, self.status, self.body = missing, status, body
+
+    def get_message(self, message_id):
+        if message_id == self.missing and not self.body:
+            raise MailboxError("gone", status=self.status)
+        return super().get_message(message_id)
+
+    def get_body(self, message_id, max_chars):
+        if message_id == self.missing:
+            raise MailboxError("gone", status=self.status)
+        return super().get_body(message_id, max_chars)
+
+
+def test_a_message_deleted_since_listing_is_skipped():
+    mailbox = Deleting([receipt("r1"), receipt("r2")], labels=ACCURACY_LABELS, missing="r1")
+
+    report = accuracy(mailbox)
+
+    assert report.categories[0] == CategoryAccuracy("receipts", "Receipts", 1, 1)
+
+
+def test_a_message_whose_body_is_gone_is_skipped():
+    def unsure(request):
+        return answers(confidence=0.97 if "body" in request.state else 0.5)
+
+    mailbox = Deleting(
+        [receipt("r1"), receipt("r2")], {"r2": "Receipt"}, ACCURACY_LABELS, missing="r1", body=True
+    )
+
+    report = accuracy(mailbox, FakeEngine(unsure))
+
+    assert report.categories[0] == CategoryAccuracy("receipts", "Receipts", 1, 1)
+
+
+def test_other_gmail_errors_end_the_check():
+    mailbox = Deleting([receipt("r1")], labels=ACCURACY_LABELS, missing="r1", status=500)
+
+    with pytest.raises(MailboxError):
+        accuracy(mailbox)
+
+
+def test_sample_ids_lists_each_enabled_category_in_config_order():
+    config = make_config(ALERTS, RECEIPTS, replace(RECEIPTS, id="old", enabled=False))
+    mailbox = RecordingMailbox([receipt("r1"), receipt("r2")], labels=[label("Receipts")])
+
+    assert sample_ids(mailbox, config) == {"alerts": [], "receipts": ["r1", "r2"]}
+    assert set(mailbox.calls) == {"list_by_label"}
+
+
+def test_the_check_only_reads_gmail():
+    emails = [receipt("r1"), make_email("a1", labels=("id-Sorter/Alerts",), subject="Alert")]
+    mailbox = RecordingMailbox(emails, {"a1": "body"}, ACCURACY_LABELS)
+
+    accuracy(mailbox, FakeEngine(lambda request: answers(confidence=0.5)))
+
+    assert set(mailbox.calls) <= {"list_labels", "list_by_label", "get_message", "get_body"}
+    assert "get_body" in mailbox.calls
+
+
+def test_a_low_confidence_guess_is_retried_with_the_body_and_scored_on_the_retry():
+    # Receipts at 0.5 is below its 0.85, so the body is fetched; the retry says alerts.
+    def unsure_then_alert(request):
+        if "body" in request.state:
+            return answers("alerts", confidence=0.97)
+        return answers("receipts", confidence=0.5)
+
+    engine = FakeEngine(unsure_then_alert)
+    mailbox = FakeMailbox([receipt("r1")], {"r1": "Your card alert"}, ACCURACY_LABELS)
+
+    report = accuracy(mailbox, engine)
+
+    assert engine.requests[1].state["body"] == "Your card alert"
+    assert report.categories[0] == CategoryAccuracy("receipts", "Receipts", 1, 0)
+    assert report.confusions == (Confusion("receipts", "alerts", 1),)
+
+
+def test_a_non_local_engine_is_refused_before_any_gmail_call():
+    class Remote(FakeEngine):
+        runs_locally = False
+
+    mailbox = RecordingMailbox([receipt("r1")], labels=ACCURACY_LABELS)
+    config = make_config()
+
+    with pytest.raises(UserError, match="R-local-only"):
+        check_accuracy(mailbox, Remote(), config, build_questions(config), {"receipts": ["r1"]})
+    assert mailbox.calls == []
+
+
+def test_progress_counts_distinct_messages():
+    calls = []
+    emails = [receipt("r1"), alert("a1"), alert("both", "id-Receipts", "id-Sorter/Alerts")]
+
+    accuracy(FakeMailbox(emails, labels=ACCURACY_LABELS), progress=lambda *c: calls.append(c))
+
+    assert calls == [(1, 3), (2, 3), (3, 3)]
+
+
+def test_confusions_are_ranked_and_cut_to_the_limit():
+    categories = [
+        replace(RECEIPTS, id=f"c{i}", gmail_label=f"L{i}", min_confidence=0.0) for i in range(4)
+    ]
+    labels = [label(f"L{i}") for i in range(4)]
+    # c0 mail: two guessed c2, one c1. c1 mail: one each of c0, c2, c3. c3 mail: one c0.
+    guesses = {"a": "c2", "b": "c2", "c": "c1", "d": "c0", "e": "c2", "f": "c3", "g": "c0"}
+    sampled = {"a": 0, "b": 0, "c": 0, "d": 1, "e": 1, "f": 1, "g": 3}
+    emails = [make_email(id, labels=(f"id-L{n}",), subject=id) for id, n in sampled.items()]
+    engine = FakeEngine(lambda request: answers(guesses[request.state["subject"]]))
+
+    report = accuracy(FakeMailbox(emails, labels=labels), engine, make_config(*categories))
+
+    assert CONFUSION_LIMIT == 5
+    assert report.confusions == (
+        Confusion("c0", "c2", 2),
+        Confusion("c0", "c1", 1),
+        Confusion("c1", "c0", 1),
+        Confusion("c1", "c2", 1),
+        Confusion("c1", "c3", 1),
+    )

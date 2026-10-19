@@ -11,18 +11,26 @@ import typer
 
 from inbox_sorter import runner
 from inbox_sorter.config import ConfigError, load_config, resolve_config_path, write_config
+from inbox_sorter.engine import DecisionEngine
 from inbox_sorter.engines import make_engine
 from inbox_sorter.errors import UserError, error_reason
 from inbox_sorter.gmail import GmailMailbox
 from inbox_sorter.questions import build_questions
 # Not `from inbox_sorter import setup`: the setup command below would shadow it.
-from inbox_sorter.setup import SetupCancelled, run_setup
+from inbox_sorter.setup import SetupCancelled, check_accuracy, run_setup, sample_ids
 from inbox_sorter.storage import state_dir
+from inbox_sorter.ui.accuracy import (
+    ACCURACY_STOPPED,
+    NO_LABELLED_MAIL,
+    AccuracyProgress,
+    accuracy_records,
+    print_accuracy,
+)
 from inbox_sorter.ui.plain import PlainReporter
 from inbox_sorter.ui.prompts import CANCELLED, LinePrompter, MenuPrompter
 from inbox_sorter.ui.table import TableReporter, one_line
 
-# Plain-text help and errors; Rich is reserved for the run dashboard.
+# Plain-text help and errors; Rich is reserved for ui/ (the setup report and the run dashboard).
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False, rich_markup_mode=None)
 
 # Shared by every command that reads the config (A-config-location).
@@ -78,11 +86,7 @@ def run(
     # stdout for the reporter's records (C-plain-output).
     with redirect_stdout(sys.stderr):
         mailbox = GmailMailbox.connect(state_dir())
-        print("loading the clef model…", flush=True)
-        try:
-            engine = make_engine("clef-local")  # A-fixed-engine
-        except (OSError, RuntimeError) as error:
-            raise UserError(f"could not load the clef model: {error_reason(error)}") from error
+        engine = _load_engine()
 
     report = (
         PlainReporter(sys.stdout, json_lines=opts.json)
@@ -129,20 +133,55 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
             print("no categories accepted; nothing was written")
         else:
             print(f"{path} is up to date; nothing was written")
+    else:
+        write_config(path, result.config, existing)
+        print(
+            f"wrote {path}: {len(result.added)} added, {len(result.disabled)} disabled, "
+            f"{result.unchanged} unchanged"
+        )
+        for category in result.added:
+            print(f"+ {category.id} → {one_line(category.gmail_label)}")
+        labels = {category.id: category.gmail_label for category in result.config.categories}
+        for category_id in result.disabled:
+            print(f"- {category_id} (label {one_line(labels[category_id])} was deleted)")
+        if not any(category.enabled for category in result.config.categories):
+            print("note: no category is enabled; run refuses this config until one is")
+    if not any(category.enabled for category in result.config.categories):
         return
 
-    write_config(path, result.config, existing)
-    print(
-        f"wrote {path}: {len(result.added)} added, {len(result.disabled)} disabled, "
-        f"{result.unchanged} unchanged"
-    )
-    for category in result.added:
-        print(f"+ {category.id} → {one_line(category.gmail_label)}")
-    labels = {category.id: category.gmail_label for category in result.config.categories}
-    for category_id in result.disabled:
-        print(f"- {category_id} (label {one_line(labels[category_id])} was deleted)")
-    if not any(category.enabled for category in result.config.categories):
-        print("note: no category is enabled; run refuses this config until one is")
+    # The accuracy check runs after the write, so a failed model load or a
+    # Ctrl-C during it never loses the wizard's answers.
+    try:
+        samples = sample_ids(mailbox, result.config)
+        if not any(samples.values()):
+            print(NO_LABELLED_MAIL)  # skip the model load
+            return
+        questions = build_questions(result.config)
+        with redirect_stdout(sys.stderr):  # keep stdout for the report (C-plain-output)
+            engine = _load_engine()
+        try:
+            with AccuracyProgress(opts.plain, opts.json, sys.stdout) as progress:
+                report = check_accuracy(
+                    mailbox, engine, result.config, questions, samples, progress=progress
+                )
+        finally:
+            engine.close()
+    except KeyboardInterrupt:
+        raise UserError(ACCURACY_STOPPED) from None
+    if opts.plain:
+        for line in accuracy_records(report, opts.json):
+            print(line)
+    else:
+        print_accuracy(report, sys.stdout)
+
+
+def _load_engine() -> DecisionEngine:
+    """Load clef (A-fixed-engine); call with stdout redirected, as loading prints."""
+    print("loading the clef model…", flush=True)
+    try:
+        return make_engine("clef-local")
+    except (OSError, RuntimeError) as error:
+        raise UserError(f"could not load the clef model: {error_reason(error)}") from error
 
 
 def main() -> None:

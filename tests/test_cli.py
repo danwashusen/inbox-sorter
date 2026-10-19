@@ -55,13 +55,23 @@ def test_no_enabled_category_names_the_config_file(tmp_path):
     assert str(result.exception).startswith(f"{config}: no category is enabled")
 
 
-def setup_cli(tmp_path, monkeypatch, mailbox):
+def setup_cli(tmp_path, monkeypatch, mailbox, engine=None):
+    """Fake sign-in and the model load; ``engine.loads`` counts make_engine calls."""
+    engine = engine or FakeEngine()  # uniform answers always pick an offered category
+    engine.loads = 0
+
     def connect(state_dir):
         print("Please visit this URL to authorize this application: https://example")
         return mailbox
 
+    def load(kind):
+        print("model weights loaded")  # loading prints; it belongs on stderr
+        engine.loads += 1
+        return engine
+
     monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connect))
     monkeypatch.setattr(cli, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(cli, "make_engine", load)
     return tmp_path / "inbox-sorter.toml"
 
 
@@ -214,3 +224,107 @@ def test_ctrl_c_during_sign_in_cancels_setup(tmp_path, monkeypatch):
 
     assert result.exit_code == 1
     assert str(result.exception) == "setup cancelled; nothing was written"
+
+
+ACCEPT_BILLS = "\n\n\n\nn\n"  # accept Bills with every default, then no new category
+
+
+def test_setup_checks_accuracy_after_writing_the_config(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1", labels=("id-Bills",))], labels=labels("Bills"))
+    config = setup_cli(tmp_path, monkeypatch, mailbox)
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)], input=ACCEPT_BILLS)
+
+    assert result.exit_code == 0, result.output
+    lines = result.stdout.splitlines()
+    # The last prompt has no newline of its own, so the line may start with it.
+    summary = f"wrote {config}: 1 added, 0 disabled, 0 unchanged"
+    [wrote] = [i for i, line in enumerate(lines) if line.endswith(summary)]
+    assert lines[wrote + 2 :] == [
+        "category id=bills label=Bills sampled=1 correct=1",
+        "accuracy engine=fake sampled=1 correct=1",
+    ]
+    assert "loading the clef model" in result.stderr
+    assert "model weights loaded" in result.stderr
+
+
+def test_a_resync_that_changes_nothing_still_checks_accuracy(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1", labels=("id-Receipts",))], labels=labels("Receipts"))
+    config = setup_cli(tmp_path, monkeypatch, mailbox)
+    config.write_text(CONFIG)
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)], input="n\n")
+
+    assert result.exit_code == 0, result.output
+    assert config.read_text() == CONFIG
+    assert result.stdout.splitlines()[-1] == "accuracy engine=fake sampled=1 correct=1"
+
+
+def test_json_setup_prints_the_accuracy_records_as_json(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1", labels=("id-Receipts",))], labels=labels("Receipts"))
+    config = setup_cli(tmp_path, monkeypatch, mailbox)
+    config.write_text(CONFIG)
+
+    args = ["--json", "setup", "--config", str(config)]
+    result = CliRunner().invoke(cli.app, args, input="n\n")
+
+    assert result.exit_code == 0, result.output
+    records = [json.loads(line) for line in result.stdout.splitlines()[-2:]]
+    assert [r["event"] for r in records] == ["category", "accuracy"]
+
+
+def test_no_accepted_category_skips_the_model_load(tmp_path, monkeypatch):
+    engine = FakeEngine()
+    config = setup_cli(tmp_path, monkeypatch, FakeMailbox(labels=labels("Bills")), engine)
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)], input="n\nn\n")
+
+    assert result.exit_code == 0, result.output
+    assert engine.loads == 0
+
+
+def test_no_labelled_mail_skips_the_model_load(tmp_path, monkeypatch):
+    engine = FakeEngine()
+    config = setup_cli(tmp_path, monkeypatch, FakeMailbox(labels=labels("Receipts")), engine)
+    config.write_text(CONFIG)
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)], input="n\n")
+
+    assert result.exit_code == 0, result.output
+    assert engine.loads == 0
+    assert result.stdout.splitlines()[-1] == "no labelled mail to check accuracy against"
+
+
+def test_ctrl_c_during_the_check_keeps_the_written_config(tmp_path, monkeypatch):
+    def interrupt(request):
+        raise KeyboardInterrupt
+
+    engine = FakeEngine(interrupt)
+    closed = []
+    engine.close = lambda: closed.append(True)
+    mailbox = FakeMailbox([make_email("m1", labels=("id-Bills",))], labels=labels("Bills"))
+    config = setup_cli(tmp_path, monkeypatch, mailbox, engine)
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)], input=ACCEPT_BILLS)
+
+    assert result.exit_code == 1
+    assert config.exists()
+    assert "nothing was written" not in str(result.exception)
+    assert str(result.exception).startswith("accuracy check stopped")
+    assert closed == [True]
+
+
+def test_a_failed_model_load_keeps_the_written_config(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1", labels=("id-Bills",))], labels=labels("Bills"))
+    config = setup_cli(tmp_path, monkeypatch, mailbox)
+
+    def broken(kind):
+        raise OSError("out of memory")
+
+    monkeypatch.setattr(cli, "make_engine", broken)
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)], input=ACCEPT_BILLS)
+
+    assert result.exit_code == 1
+    assert str(result.exception).startswith("could not load the clef model")
+    assert load_config(config).categories[0].id == "bills"

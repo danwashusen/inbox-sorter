@@ -6,7 +6,7 @@ from inbox_sorter.engines.fake import FakeEngine
 from inbox_sorter.errors import UserError
 from inbox_sorter.gmail import PROCESSED_LABEL, LabelInfo, MailboxError
 from inbox_sorter.questions import build_questions
-from inbox_sorter.runner import new_run_id, run
+from inbox_sorter.runner import decide_message, new_run_id, run
 from inbox_sorter.types import MessageDecided, MessageFailed, RunFinished, RunStarted
 from tests.factories import answers, make_config, make_email
 from tests.fake_mailbox import FakeMailbox
@@ -166,3 +166,15 @@ def test_a_dry_run_changes_no_labels():
 
 def test_run_id_is_a_utc_timestamp():
     assert new_run_id(datetime(2026, 10, 18, 14, 2, 11, tzinfo=UTC)) == "20261018-140211"
+
+
+def test_decide_message_retries_a_low_confidence_answer_with_the_body():
+    config = make_config()
+    engine = FakeEngine(unsure_then_sure)
+    mailbox = FakeMailbox([make_email("m1")], bodies={"m1": "Your order has shipped"})
+
+    email, decision = decide_message(mailbox, engine, config, build_questions(config), "m1")
+
+    assert len(engine.requests) == 2
+    assert email.body == "Your order has shipped"
+    assert decision.used_body and decision.confidence == 0.97

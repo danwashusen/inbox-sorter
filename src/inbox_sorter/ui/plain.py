@@ -1,4 +1,6 @@
-"""Plain mode: one stable record per event, as logfmt or JSON lines (ux.md §Plain mode).
+"""Plain mode: one stable record per line, as logfmt or JSON lines (ux.md §Plain mode).
+
+``run`` writes one per event; ``setup`` writes its accuracy records through ``record``.
 
 No email body is ever printed; output is often piped to a file.
 """
@@ -47,12 +49,12 @@ def plain_line(event: RunEvent, json_lines: bool) -> str:
         case RunFinished():
             name = "finished"
             fields = {"run": event.run_id, "decided": event.decided, "failed": event.failed}
-    return _record(name, fields, json_lines)
+    return record(name, fields, json_lines)
 
 
 def progress_line(done: int, total: int | None, json_lines: bool) -> str:
     """The periodic progress record; not a RunEvent."""
-    return _record("progress", {"done": done, "total": total}, json_lines)
+    return record("progress", {"done": done, "total": total}, json_lines)
 
 
 class PlainReporter:
@@ -79,7 +81,8 @@ class PlainReporter:
         print(line, file=self.out, flush=True)
 
 
-def _record(name: str, fields: dict[str, Any], json_lines: bool) -> str:
+def record(name: str, fields: dict[str, Any], json_lines: bool) -> str:
+    """One record: ``name`` then ``fields`` in order, as logfmt or a JSON line."""
     if json_lines:
         line = json.dumps({"event": name, **fields}, ensure_ascii=False)
         # json leaves these raw, but many line readers split on them.
