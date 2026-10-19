@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 from inbox_sorter import cli
 from inbox_sorter.config import load_config
 from inbox_sorter.engines.fake import FakeEngine
-from inbox_sorter.gmail import LabelInfo
+from inbox_sorter.gmail import LabelInfo, MailboxError
 from tests.factories import answers, make_email
 from tests.fake_mailbox import FakeMailbox
 
@@ -327,4 +327,29 @@ def test_a_failed_model_load_keeps_the_written_config(tmp_path, monkeypatch):
 
     assert result.exit_code == 1
     assert str(result.exception).startswith("could not load the clef model")
+    assert str(result.exception).endswith("the config on disk is as reported above")
     assert load_config(config).categories[0].id == "bills"
+
+
+def test_a_gmail_error_during_the_check_says_the_config_was_kept(tmp_path, monkeypatch):
+    class Failing(FakeMailbox):
+        """Lists labels for the wizard, then fails the check's own listing."""
+
+        calls = 0
+
+        def list_labels(self):
+            self.calls += 1
+            if self.calls > 1:
+                raise MailboxError("Gmail request failed (500)", status=500)
+            return super().list_labels()
+
+    mailbox = Failing([make_email("m1", labels=("id-Bills",))], labels=labels("Bills"))
+    config = setup_cli(tmp_path, monkeypatch, mailbox)
+
+    result = CliRunner().invoke(cli.app, ["setup", "--config", str(config)], input=ACCEPT_BILLS)
+
+    assert result.exit_code == 1
+    assert str(result.exception) == (
+        "Gmail request failed (500); the config on disk is as reported above"
+    )
+    assert config.exists()

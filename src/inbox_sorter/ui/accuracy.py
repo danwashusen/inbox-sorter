@@ -16,7 +16,8 @@ from inbox_sorter.ui.plain import progress_line, record
 from inbox_sorter.ui.table import one_line
 
 NO_LABELLED_MAIL = "no labelled mail to check accuracy against"
-ACCURACY_STOPPED = "accuracy check stopped; the config on disk is as reported above"
+CONFIG_KEPT = "the config on disk is as reported above"
+ACCURACY_STOPPED = f"accuracy check stopped; {CONFIG_KEPT}"
 PROGRESS_EVERY = 10  # plain progress records, as in run (ux.md §Plain mode)
 
 

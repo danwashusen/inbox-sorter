@@ -21,6 +21,7 @@ from inbox_sorter.setup import SetupCancelled, check_accuracy, run_setup, sample
 from inbox_sorter.storage import state_dir
 from inbox_sorter.ui.accuracy import (
     ACCURACY_STOPPED,
+    CONFIG_KEPT,
     NO_LABELLED_MAIL,
     AccuracyProgress,
     accuracy_records,
@@ -174,6 +175,8 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
             print_accuracy(report, sys.stdout)
     except KeyboardInterrupt:
         raise UserError(ACCURACY_STOPPED) from None
+    except UserError as error:  # a model load or Gmail failure after the write
+        raise UserError(f"{error}; {CONFIG_KEPT}") from error
 
 
 def _load_engine() -> DecisionEngine:

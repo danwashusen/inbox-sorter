@@ -223,18 +223,17 @@ def check_accuracy(
     category_label = {category.id: category.gmail_label for category in config.categories}
 
     distinct = list(dict.fromkeys(mid for ids in samples.values() for mid in ids))
-    chosen: dict[str, str | None] = {}  # message ID -> chosen category, None if skipped
-    carried: dict[str, frozenset[str]] = {}
+    # Message ID -> (chosen category, the message's label IDs), or None if skipped.
+    outcomes: dict[str, tuple[str, frozenset[str]] | None] = {}
     for done, message_id in enumerate(distinct, start=1):
         try:
             email, decision = decide_message(mailbox, engine, config, questions, message_id)
         except MailboxError as error:
             if error.status != 404:  # only a message deleted since listing is skipped
                 raise
-            chosen[message_id] = None
+            outcomes[message_id] = None
         else:
-            chosen[message_id] = decision.category
-            carried[message_id] = email.label_ids
+            outcomes[message_id] = (decision.category, email.label_ids)
         if progress is not None:
             progress(done, len(distinct))
 
@@ -245,11 +244,12 @@ def check_accuracy(
             continue
         sampled = correct = 0
         for message_id in samples.get(category.id, []):
-            predicted = chosen[message_id]
-            if predicted is None:
+            outcome = outcomes[message_id]
+            if outcome is None:
                 continue
+            predicted, carried = outcome
             sampled += 1
-            if label_ids.get(category_label[predicted]) in carried[message_id]:
+            if label_ids.get(category_label[predicted]) in carried:
                 correct += 1
             else:
                 confusions[(category.id, predicted)] += 1
