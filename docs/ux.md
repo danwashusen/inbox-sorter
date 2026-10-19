@@ -100,7 +100,7 @@ run log, and never signs in. `--apply` removes the labels the run added,
 `Sorter/_processed` included, and adds back the `INBOX` and `UNREAD` it
 removed. Mail a later run changed again is skipped.
 
-1. `Undo · DRY RUN · run <id> · <n> to undo · <n> skipped`, or `APPLY`.
+1. `Undo · <DRY RUN|APPLY> · run <id> · <n> <to undo|undone> · <n> skipped`
 2. Label counts, skips by reason, then in a dry run the `--apply` command.
 
 ## Plain mode
@@ -126,8 +126,8 @@ order.
   reply=<n> today=<n> low=<n> elapsed=<seconds>
   review=Sorter/_low-confidence`, last
 
-`undo` prints the skips, then one record per message, then a total;
-`--apply` adds the `progress` record:
+`undo` prints the log's skips, then one record per message (`gone` under
+`--apply`), then a total; `--apply` adds the `progress` record:
 
 - `skipped id=<message-id> reason=<later-run|unchanged|gone>`
 - `planned` (dry run) or `undone id=<message-id> restore=<labels>

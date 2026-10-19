@@ -14,7 +14,7 @@ def test_plain_progress_every_ten_items_except_after_the_last():
 
 def test_terminal_progress_writes_no_plain_records():
     out = io.StringIO()
-    with CountProgress("[bold]x", plain=False, json_lines=False, out=out) as progress:
+    with CountProgress("undoing run r1", plain=False, json_lines=False, out=out) as progress:
         for done in range(1, 26):
             progress(done, 25)
 
