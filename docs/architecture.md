@@ -252,6 +252,6 @@ Accepted items move here with an `A-<slug>` ID.
 - A-accuracy-check: `check_accuracy` decides as `run` does, through
   `runner.decide_message`; a guess is right if the message has its label.
 - A-category-bars: `ui/bars.py` draws the bars for setup and the dashboard.
-- A-run-log: apply runs log to `runs.jsonl`: a synced line, at most one modify.
+- A-run-log: only apply runs log (`runs.jsonl`, synced), then at most 1 modify.
 - A-label-resolver: once per run; creates ancestors first; exact-case (#19).
 - A-run-summary: `summary.SummaryTally` tallies; `ui/summary.py` renders.
