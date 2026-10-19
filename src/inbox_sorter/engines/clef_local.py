@@ -32,7 +32,6 @@ class ClefLocalEngine:
         # no slower-kernel warnings or torch's macOS note. Other warnings,
         # such as weights missing from the checkpoint, still show, and a
         # first download still shows its progress.
-        transformers_logging.disable_progress_bar()
         for name in (KERNELS_LOGGER, TORCH_REDIRECTS_LOGGER):
             logging.getLogger(name).addFilter(_errors_only)
         try:
@@ -42,6 +41,8 @@ class ClefLocalEngine:
             bars = nullcontext()
         with bars:
             path = snapshot_download(model_id)  # still fetches a newer revision
+        # After the download: this also turns off every Hugging Face Hub bar.
+        transformers_logging.disable_progress_bar()
         # The model's loader ships as a module inside the model repo.
         if path not in sys.path:
             sys.path.insert(0, path)

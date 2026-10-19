@@ -122,7 +122,7 @@ def failed_text(at: datetime, event: MessageFailed) -> str:
 
 
 def title_text(started: RunStarted | None, device: str | None) -> Text:
-    """Such as "inbox-sorter · APPLY · clef-local on MPS"; the mode is a word, not just a colour."""
+    """Such as "inbox-sorter · APPLY · clef-local:Cloudflare/clef on MPS"; the mode is a word, not just a colour."""
     title = Text("inbox-sorter")
     if started is None:
         return title
