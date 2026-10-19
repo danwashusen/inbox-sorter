@@ -82,7 +82,8 @@ def test_in_the_foreground_q_is_read_in_cbreak_mode_and_everything_is_restored(
     before_handler = signal.getsignal(signal.SIGINT)
     flag, notices = StopFlag(), []
 
-    with pytest.raises(RuntimeError), listen_for_stop(flag, notices.append):
+    with pytest.raises(RuntimeError), listen_for_stop(flag, notices.append) as q_key:
+        assert q_key is True
         assert not termios.tcgetattr(slave)[3] & termios.ICANON
         assert len(reader_threads()) == 1
         assert signal.getsignal(signal.SIGINT) is not before_handler
@@ -111,7 +112,8 @@ def test_in_the_background_only_ctrl_c_is_handled(terminal, monkeypatch, pgrp):
     before_attrs = termios.tcgetattr(slave)
     before_handler = signal.getsignal(signal.SIGINT)
 
-    with listen_for_stop(StopFlag(), lambda text: None):
+    with listen_for_stop(StopFlag(), lambda text: None) as q_key:
+        assert q_key is False
         assert termios.tcgetattr(slave) == before_attrs
         assert reader_threads() == []
         assert signal.getsignal(signal.SIGINT) is not before_handler
@@ -175,7 +177,8 @@ def test_a_terminal_gone_before_the_run_starts_leaves_only_ctrl_c(terminal, monk
     monkeypatch.setattr(stop.termios, "tcgetattr", hung_up)
     before = signal.getsignal(signal.SIGINT)
 
-    with listen_for_stop(StopFlag(), print):
+    with listen_for_stop(StopFlag(), print) as q_key:
+        assert q_key is False
         assert reader_threads() == []
         assert signal.getsignal(signal.SIGINT) is not before
 
@@ -205,7 +208,8 @@ def test_with_stdin_closed_only_ctrl_c_is_handled_and_the_handler_is_restored(mo
     monkeypatch.setattr(stop.sys, "stdin", None)  # as Python leaves it when fd 0 is closed
     before = signal.getsignal(signal.SIGINT)
 
-    with listen_for_stop(StopFlag(), print):
+    with listen_for_stop(StopFlag(), print) as q_key:
+        assert q_key is False
         assert signal.getsignal(signal.SIGINT) is not before
         assert reader_threads() == []
 

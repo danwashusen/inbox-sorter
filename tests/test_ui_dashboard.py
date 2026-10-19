@@ -177,3 +177,18 @@ def test_the_retry_line_shows_while_a_retry_waits_and_clears_on_the_next_message
     tally(event)
     dashboard(event)
     assert "retrying" not in rendered()
+
+
+def test_the_footer_offers_q_only_when_q_is_listened_for():
+    dashboard = Dashboard(SummaryTally(CONFIG), io.StringIO())
+
+    def footer() -> str:
+        out = io.StringIO()
+        Console(file=out, width=100).print(dashboard.panel())
+        return out.getvalue().splitlines()[-1]
+
+    assert "q stop after current" in footer()
+    dashboard.q_key = False
+    assert "Ctrl-C stop after current · twice to abort" in footer()
+    dashboard.notice(STOPPING)
+    assert STOPPING[:40] in footer()

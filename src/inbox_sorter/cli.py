@@ -129,6 +129,7 @@ def run(
         engine = _load_engine()
 
     tally = SummaryTally(cfg)
+    dashboard = None
     if opts.plain:
         report = PlainReporter(sys.stdout, json_lines=opts.json)
         view, notice = nullcontext(), write_stderr
@@ -154,7 +155,9 @@ def run(
     try:
         # Only the loop: Ctrl-C during sign-in or the model load keeps its default.
         # The panel is innermost, so it is gone before any summary prints.
-        with keep_awake(), listen_for_stop(flag, notice=notice), view:
+        with keep_awake(), listen_for_stop(flag, notice=notice) as q_key, view:
+            if dashboard is not None:  # set before the first refresh draws the footer
+                dashboard.q_key = q_key
             for event in events:
                 tally(event)
                 report(event)

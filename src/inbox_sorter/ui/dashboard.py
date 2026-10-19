@@ -52,6 +52,7 @@ FEED_SIZE = 5  # the last few decisions
 PROGRESS_WIDTH = 30
 LISTING = "listing unprocessed inbox mail…"
 FOOTER = "q stop after current · Ctrl-C twice to abort"
+FOOTER_NO_Q = "Ctrl-C stop after current · twice to abort"  # stdin is not a foreground terminal
 
 
 def _local_now() -> datetime:
@@ -168,6 +169,7 @@ class Dashboard:
         # Set from the SIGINT handler and the q thread: a bare attribute,
         # no lock or I/O (see stop.StopFlag).
         self.stopping: str | None = None
+        self.q_key = True  # False when stop.listen_for_stop has no `q` listener
 
     def __enter__(self) -> "Dashboard":
         self._live = Live(
@@ -251,7 +253,7 @@ class Dashboard:
             Group(*parts),
             title=title_text(started, self._device),
             title_align="left",
-            subtitle=Text(self.stopping or FOOTER),
+            subtitle=Text(self.stopping or (FOOTER if self.q_key else FOOTER_NO_Q)),
             subtitle_align="left",
         )
 
