@@ -93,6 +93,16 @@ the run prints after the summary.
 5. `Run <id> · undo with: inbox-sorter undo <id>`, or `dry run, nothing
    to undo`.
 
+## Undo
+
+`inbox-sorter undo <run-id>` previews reversing one applied run from the
+run log, and never signs in. `--apply` removes the labels the run added,
+`Sorter/_processed` included, and adds back the `INBOX` and `UNREAD` it
+removed. Mail a later run changed again is skipped.
+
+1. `Undo · DRY RUN · run <id> · <n> to undo · <n> skipped`, or `APPLY`.
+2. Label counts, skips by reason, then in a dry run the `--apply` command.
+
 ## Plain mode
 
 When output is not a terminal, or with `--plain`, the run prints one line
@@ -115,6 +125,13 @@ order.
 - `summary run=<run-id> mode=<dry-run|apply> decided=<n> failed=<n>
   reply=<n> today=<n> low=<n> elapsed=<seconds>
   review=Sorter/_low-confidence`, last
+
+`undo` prints the skips first, then one record per message, then a total:
+
+- `skipped id=<message-id> reason=<later-run|unchanged|gone>`
+- `planned` (dry run) or `undone id=<message-id> restore=<labels>
+  remove=<labels>`
+- `undo run=<run-id> mode=<dry-run|apply> undone=<n> skipped=<n>`
 
 A value is double-quoted when it is empty or holds a space, `"`, `=`, `\`
 or a control character. Inside quotes `\`, `"`, a newline and a tab are

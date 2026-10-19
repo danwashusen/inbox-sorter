@@ -4,16 +4,14 @@ No email content is ever printed: only label names, category IDs, counts and
 the engine name.
 """
 
-from collections.abc import Callable
 from typing import TextIO
 
 from rich.console import Console
-from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn
 from rich.text import Text
 
 from inbox_sorter.setup import AccuracyReport
 from inbox_sorter.ui.bars import Bar, category_bars
-from inbox_sorter.ui.plain import PROGRESS_EVERY, progress_line, record
+from inbox_sorter.ui.plain import record
 from inbox_sorter.ui.table import one_line
 
 NO_LABELLED_MAIL = "no labelled mail to check accuracy against"
@@ -103,40 +101,3 @@ def print_accuracy(report: AccuracyReport, out: TextIO) -> None:
             predicted = one_line(labels[confusion.predicted])
             console.print(Text(f"{actual} → {predicted}  {confusion.count}"))
 
-
-class AccuracyProgress:
-    """A context manager giving the check's progress callback.
-
-    On a terminal it is a transient Rich bar; in plain mode it writes a
-    progress record every 10th message except the last, as ``run`` does.
-    """
-
-    def __init__(self, plain: bool, json_lines: bool, out: TextIO) -> None:
-        self.plain = plain
-        self.json_lines = json_lines
-        self.out = out
-        self._bar: Progress | None = None
-
-    def __enter__(self) -> Callable[[int, int], None]:
-        if self.plain:
-            return self._write
-        self._bar = Progress(
-            TextColumn("checking accuracy"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            console=Console(file=self.out, highlight=False),
-            transient=True,
-        )
-        self._bar.__enter__()
-        task = self._bar.add_task("", total=None)
-        bar = self._bar
-        return lambda done, total: bar.update(task, completed=done, total=total)
-
-    def __exit__(self, *exc: object) -> None:
-        if self._bar is not None:
-            self._bar.__exit__(None, None, None)
-
-    def _write(self, done: int, total: int) -> None:
-        # The last message is followed by the report, not progress.
-        if done % PROGRESS_EVERY == 0 and done != total:
-            print(progress_line(done, total, self.json_lines), file=self.out, flush=True)

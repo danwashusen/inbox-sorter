@@ -171,7 +171,8 @@ R-dry-run-default.
 - R-apply-flag: `--apply` performs the actions through the Gmail API.
 - R-run-log: Append each applied decision to `runs.jsonl` in the state
   directory: run ID, message ID, probabilities, labels added and removed.
-- R-undo: `inbox-sorter undo <run-id>` reverses the actions of one applied run.
+- R-undo: `inbox-sorter undo <run-id>` is a dry run of reversing one applied
+  run; `--apply` reverses it.
 - R-oauth-modify-scope: OAuth uses the `gmail.modify` scope; tokens stay in a
   local file.
 - R-local-only: Email content is never sent to a remote service other than

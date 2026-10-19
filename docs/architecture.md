@@ -36,11 +36,10 @@ engine, so tests swap both for fakes and clef can be replaced later.
 ## Modules
 
 All under `src/inbox_sorter/`. Only `cli.py` and `ui/` may import Typer,
-Rich or questionary (C-thin-cli).
+Rich or questionary (C-thin-cli). Modules marked **(exists)** are built.
+The others are planned.
 
-Modules marked **(exists)** are built. The others are planned.
-
-- `cli.py` **(exists)**: `setup` and `run`; `undo` comes with #11. Parses
+- `cli.py` **(exists)**: `setup`, `run` and `undo`. Parses
   flags, builds the real Gmail client and decision engine, picks a
   reporter, maps errors to exit codes (C-exit-codes).
 - `config.py` **(exists)**: loads and validates `inbox-sorter.toml` into
@@ -65,16 +64,17 @@ Modules marked **(exists)** are built. The others are planned.
   `Decision`. Holds every policy rule: thresholds, body retry, flags, and
   keeping flagged mail in the inbox.
 - `runner.py` **(exists)**: the run loop. Fetch, classify, retry,
-  decide, log, apply. Emits `RunEvent`s and checks a stop flag between
-  messages. So far it has no stop flag.
-- `runlog.py` **(exists)**: one JSON line per applied decision, for `undo`.
+  decide, log, apply. Emits `RunEvent`s; #12 adds a stop flag.
+- `runlog.py` and `undo.py` **(exist)**: the run log, one JSON line per
+  applied decision, and `undo`, which reverses a run's own lines.
 - `summary.py` **(exists)**: tallies `RunEvent`s into the run summary.
 - `setup.py` **(exists)**: re-sync, the wizard and the accuracy check.
 - `ui/dashboard.py`: renders `RunEvent`s as the live panel.
 - `ui/plain.py`, `ui/table.py`, `ui/prompts.py`, `ui/bars.py`,
-  `ui/accuracy.py` and `ui/summary.py` **(exist)**: plain lines, the run
-  table shown until the panel lands, `setup` prompts, category bars, the
-  accuracy report and the run summary.
+  `ui/accuracy.py`, `ui/summary.py`, `ui/progress.py` and `ui/undo.py`
+  **(exist)**: plain lines, the run table shown until the panel lands,
+  `setup` prompts, category bars, the accuracy report, the run summary,
+  progress bars and the undo output.
 - `system.py`: `caffeinate` and notifications via subprocess.
 
 ## Core types

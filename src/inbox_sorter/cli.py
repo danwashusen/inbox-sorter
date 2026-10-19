@@ -14,9 +14,9 @@ from inbox_sorter.config import ConfigError, load_config, resolve_config_path, w
 from inbox_sorter.engine import DecisionEngine
 from inbox_sorter.engines import make_engine
 from inbox_sorter.errors import UserError, error_reason
-from inbox_sorter.gmail import GmailMailbox
+from inbox_sorter.gmail import GmailMailbox, MailboxError
 from inbox_sorter.questions import build_questions
-from inbox_sorter.runlog import RUN_LOG_NAME, RunLog
+from inbox_sorter.runlog import RUN_LOG_NAME, RunLog, read_log
 # Not `from inbox_sorter import setup`: the setup command below would shadow it.
 from inbox_sorter.setup import SetupCancelled, check_accuracy, run_setup, sample_ids
 from inbox_sorter.storage import state_dir
@@ -25,14 +25,23 @@ from inbox_sorter.ui.accuracy import (
     ACCURACY_STOPPED,
     CONFIG_KEPT,
     NO_LABELLED_MAIL,
-    AccuracyProgress,
     accuracy_records,
     print_accuracy,
 )
 from inbox_sorter.ui.plain import PlainReporter
+from inbox_sorter.ui.progress import CountProgress
 from inbox_sorter.ui.prompts import CANCELLED, LinePrompter, MenuPrompter
 from inbox_sorter.ui.summary import print_summary, summary_records
 from inbox_sorter.ui.table import TableReporter, one_line
+from inbox_sorter.ui.undo import (
+    outcome_record,
+    skipped_records,
+    step_record,
+    undo_lines,
+    undo_total_record,
+)
+# Not `from inbox_sorter import undo`: the undo command below would shadow it.
+from inbox_sorter.undo import UndoOutcome, UndoPlan, apply_undo, plan_undo
 
 # Plain-text help and errors; Rich is reserved for ui/ (the setup report and the run dashboard).
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False, rich_markup_mode=None)
@@ -197,7 +206,7 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
         with redirect_stdout(sys.stderr):  # keep stdout for the report (C-plain-output)
             engine = _load_engine()
         try:
-            with AccuracyProgress(opts.plain, opts.json, sys.stdout) as progress:
+            with CountProgress("checking accuracy", opts.plain, opts.json, sys.stdout) as progress:
                 report = check_accuracy(
                     mailbox, engine, result.config, questions, samples, progress=progress
                 )
@@ -212,6 +221,79 @@ def setup(ctx: typer.Context, config: ConfigOption = None) -> None:
         raise UserError(ACCURACY_STOPPED) from None
     except UserError as error:  # a model load or Gmail failure after the write
         raise UserError(f"{error}; {CONFIG_KEPT}") from error
+
+
+@app.command()
+def undo(
+    ctx: typer.Context,
+    run_id: Annotated[
+        str,
+        typer.Argument(metavar="RUN_ID", help="The run ID an apply run printed in its summary."),
+    ],
+    apply: Annotated[
+        bool, typer.Option("--apply", help="Change Gmail: reverse the run. Without it, a dry run.")
+    ] = False,
+) -> None:
+    """Reverse one applied run from the run log. A dry run unless --apply is given."""
+    opts: CliOptions = ctx.obj
+    state = state_dir()
+    # A missing or bad log, or an unknown run ID, stops undo before sign-in.
+    plan = plan_undo(read_log(state / RUN_LOG_NAME), run_id)
+    if opts.plain:
+        for line in skipped_records(plan, opts.json):
+            print(line, flush=True)
+    if not apply:
+        if opts.plain:
+            for step in plan.steps:
+                print(step_record(step, opts.json), flush=True)
+        _print_undo(plan, None, opts)
+        return
+
+    outcomes: list[UndoOutcome] = []
+
+    def stopped() -> str:
+        return (
+            f"undo stopped after {len(outcomes)} of {len(plan.steps)} messages; "
+            f"run inbox-sorter undo {run_id} --apply again to finish"
+        )
+
+    if plan.steps:  # nothing left to reverse needs no sign-in
+        try:
+            with redirect_stdout(sys.stderr):  # the OAuth prompt prints (C-plain-output)
+                mailbox = GmailMailbox.connect(state)
+        except KeyboardInterrupt:
+            raise UserError(stopped()) from None
+        try:
+            label = f"undoing run {run_id}"
+            with CountProgress(label, opts.plain, opts.json, sys.stdout) as progress:
+                for outcome in apply_undo(mailbox, plan):
+                    outcomes.append(outcome)
+                    if opts.plain:
+                        print(outcome_record(outcome, opts.json), flush=True)
+                    progress(len(outcomes), len(plan.steps))
+        except (MailboxError, KeyboardInterrupt) as error:
+            # Earlier messages are already undone; show the counts before the error.
+            _print_undo(plan, outcomes, opts)
+            if isinstance(error, KeyboardInterrupt):
+                raise UserError(stopped()) from None
+            raise UserError(f"{error}; {stopped()}") from error
+    _print_undo(plan, outcomes, opts)
+
+
+def _print_undo(plan: UndoPlan, outcomes: list[UndoOutcome] | None, opts: CliOptions) -> None:
+    """The total record in plain mode, else the terminal lines; ``outcomes`` None is a dry run."""
+    if not opts.plain:
+        for line in undo_lines(plan, outcomes):
+            print(line, flush=True)
+        return
+    skipped = len(plan.later_run) + len(plan.unchanged)
+    if outcomes is None:
+        undone = len(plan.steps)
+    else:
+        undone = sum(outcome.status == "undone" for outcome in outcomes)
+        skipped += len(outcomes) - undone
+    total = undo_total_record(plan.run_id, outcomes is not None, undone, skipped, opts.json)
+    print(total, flush=True)
 
 
 def _load_engine() -> DecisionEngine:

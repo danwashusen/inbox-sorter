@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from inbox_sorter.runlog import RunLog, RunLogError, log_line
+from inbox_sorter.runlog import LoggedChange, RunLog, RunLogError, log_line, read_log
 from inbox_sorter.types import Decision, Probabilities
 
 DECISION = Decision(
@@ -81,3 +81,61 @@ def test_an_unwritable_log_raises_a_run_log_error_naming_it(tmp_path):
 
     with pytest.raises(RunLogError, match=f"cannot write the run log {path}"):
         RunLog(path).append("r1", "fake", DECISION, ADDED)
+
+
+def test_read_log_reads_back_what_append_wrote_in_order(tmp_path):
+    path = tmp_path / "runs.jsonl"
+    RunLog(path).append("r1", "fake", DECISION, ADDED)
+    RunLog(path).append("r2", "fake", replace(DECISION, message_id="m2", remove_labels=()), {})
+
+    assert read_log(path) == [
+        LoggedChange("r1", "m1", ADDED, ("INBOX", "UNREAD")),
+        LoggedChange("r2", "m2", {}, ()),
+    ]
+
+
+def test_read_log_without_a_log_says_nothing_was_applied(tmp_path):
+    path = tmp_path / "runs.jsonl"
+
+    with pytest.raises(RunLogError, match=f"no applied run has been logged yet: {path} does not"):
+        read_log(path)
+
+
+def test_read_log_ignores_blank_lines_and_unknown_keys(tmp_path):
+    path = tmp_path / "runs.jsonl"
+    line = {"run": "r1", "id": "m1", "add": [], "add_ids": [], "remove": [], "new": 1}
+    path.write_text("\n" + json.dumps(line) + "\n\n")
+
+    assert read_log(path) == [LoggedChange("r1", "m1", {}, ())]
+
+
+GOOD = {"run": "r1", "id": "m1", "add": ["A"], "add_ids": ["Label_1"], "remove": ["INBOX"]}
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "{not json",
+        json.dumps(["r1"]),
+        json.dumps({key: value for key, value in GOOD.items() if key != "add_ids"}),
+        json.dumps({**GOOD, "run": 7}),
+        json.dumps({**GOOD, "add_ids": ["Label_1", "Label_2"]}),
+        json.dumps({**GOOD, "add": ["A", "A"], "add_ids": ["Label_1", "Label_2"]}),
+        json.dumps({**GOOD, "remove": ["TRASH"]}),
+        json.dumps({**GOOD, "remove": "INBOX"}),
+    ],
+)
+def test_read_log_refuses_a_line_it_cannot_read_naming_it(tmp_path, bad):
+    path = tmp_path / "runs.jsonl"
+    path.write_text(json.dumps(GOOD) + "\n" + bad + "\n")
+
+    with pytest.raises(RunLogError, match=f"^{path} line 2 is not a run-log line; fix or delete"):
+        read_log(path)
+
+
+def test_read_log_names_a_log_it_cannot_read(tmp_path):
+    path = tmp_path / "runs.jsonl"
+    path.mkdir()
+
+    with pytest.raises(RunLogError, match=f"cannot read the run log {path}: "):
+        read_log(path)

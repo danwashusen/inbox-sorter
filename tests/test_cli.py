@@ -420,3 +420,162 @@ def test_a_gmail_error_during_the_check_says_the_config_was_kept(tmp_path, monke
         "Gmail request failed (500); the config on disk is as reported above"
     )
     assert config.exists()
+
+
+# Undo
+
+
+def no_sign_in(tmp_path, monkeypatch):
+    """Point the state directory at ``tmp_path`` and fail the test on any sign-in."""
+
+    def connect(state_dir):
+        pytest.fail("undo signed in")
+
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connect))
+    monkeypatch.setattr(cli, "state_dir", lambda: tmp_path)
+
+
+def applied_run(tmp_path, monkeypatch):
+    """Apply a run over two messages; return the mailbox, their labels before, and the run ID."""
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")], labels=labels("Receipts"))
+    before = [email.label_ids for email in mailbox.emails]
+    assert apply_cli(tmp_path, monkeypatch, mailbox).exit_code == 0
+    run_id = json.loads((tmp_path / "runs.jsonl").read_text().splitlines()[0])["run"]
+    return mailbox, before, run_id
+
+
+@pytest.mark.parametrize("args", [["undo", "nope"], ["undo", "nope", "--apply"]])
+def test_undo_of_an_unknown_run_exits_1_with_one_line_before_sign_in(
+    tmp_path, monkeypatch, capsys, args
+):
+    applied_run(tmp_path, monkeypatch)
+    no_sign_in(tmp_path, monkeypatch)
+    monkeypatch.setattr(cli.sys, "argv", ["inbox-sorter", *args])
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main()
+
+    out, err = capsys.readouterr()
+    assert exited.value.code == 1 and out == ""
+    assert err.splitlines() == [
+        "error: no applied run nope in the run log; dry runs are not logged, "
+        "and an apply run prints its ID in its summary"
+    ]
+
+
+def test_undo_with_no_log_or_a_bad_line_stops_before_sign_in(tmp_path, monkeypatch):
+    no_sign_in(tmp_path, monkeypatch)
+
+    missing = CliRunner().invoke(cli.app, ["undo", "r1", "--apply"])
+    (tmp_path / "runs.jsonl").write_text('{"run": "r1"}\n')
+    bad = CliRunner().invoke(cli.app, ["undo", "r1", "--apply"])
+
+    assert missing.exit_code == 1
+    assert str(missing.exception).startswith("no applied run has been logged yet")
+    assert bad.exit_code == 1
+    assert str(bad.exception).endswith(
+        "line 1 is not a run-log line; fix or delete it, then undo again"
+    )
+
+
+def test_undo_dry_run_prints_the_plan_and_never_signs_in(tmp_path, monkeypatch):
+    _, _, run_id = applied_run(tmp_path, monkeypatch)
+    no_sign_in(tmp_path, monkeypatch)
+    log = (tmp_path / "runs.jsonl").read_text()
+
+    result = CliRunner().invoke(cli.app, ["--plain", "undo", run_id])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "planned id=m1 restore=INBOX,UNREAD remove=Receipts,Sorter/_processed",
+        "planned id=m2 restore=INBOX,UNREAD remove=Receipts,Sorter/_processed",
+        f"undo run={run_id} mode=dry-run undone=2 skipped=0",
+    ]
+    assert (tmp_path / "runs.jsonl").read_text() == log  # undo writes nothing to the log
+
+
+def test_undo_on_a_terminal_prints_lines_not_records(capsys):
+    plan = cli.UndoPlan("r1", (), (), ("m1",))
+
+    cli._print_undo(plan, None, cli.CliOptions(plain=False, debug=False, json=False))
+
+    out = capsys.readouterr().out
+    assert out.splitlines()[0] == "Undo · DRY RUN · run r1 · 0 to undo · 1 skipped"
+    assert "undo run=" not in out
+
+
+def test_undo_apply_restores_the_runs_labels(tmp_path, monkeypatch):
+    mailbox, before, run_id = applied_run(tmp_path, monkeypatch)
+
+    result = CliRunner().invoke(cli.app, ["--plain", "undo", run_id, "--apply"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "undone id=m1 restore=INBOX,UNREAD remove=Receipts,Sorter/_processed",
+        "undone id=m2 restore=INBOX,UNREAD remove=Receipts,Sorter/_processed",
+        f"undo run={run_id} mode=apply undone=2 skipped=0",
+    ]
+    assert [email.label_ids for email in mailbox.emails] == before
+    assert "Please visit this URL" in result.stderr  # sign-in output stays off stdout
+
+
+def test_undo_apply_with_nothing_left_to_reverse_never_signs_in(tmp_path, monkeypatch):
+    no_sign_in(tmp_path, monkeypatch)
+    line = {"run": "r1", "id": "m1", "add": [], "add_ids": [], "remove": []}
+    (tmp_path / "runs.jsonl").write_text(json.dumps(line) + "\n")
+
+    result = CliRunner().invoke(cli.app, ["--plain", "undo", "r1", "--apply"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.splitlines() == [
+        "skipped id=m1 reason=unchanged",
+        "undo run=r1 mode=apply undone=0 skipped=1",
+    ]
+
+
+def test_a_gmail_error_mid_undo_prints_the_counts_then_says_how_to_finish(tmp_path, monkeypatch):
+    mailbox, _, run_id = applied_run(tmp_path, monkeypatch)
+    mailbox.fail_modify = {"m2"}
+
+    result = CliRunner().invoke(cli.app, ["--plain", "undo", run_id, "--apply"])
+
+    assert result.exit_code == 1
+    assert result.stdout.splitlines()[-1] == f"undo run={run_id} mode=apply undone=1 skipped=0"
+    assert str(result.exception) == (
+        f"modify failed for 'm2'; undo stopped after 1 of 2 messages; "
+        f"run inbox-sorter undo {run_id} --apply again to finish"
+    )
+
+
+def test_ctrl_c_mid_undo_says_how_to_finish(tmp_path, monkeypatch):
+    mailbox, _, run_id = applied_run(tmp_path, monkeypatch)
+
+    def interrupted(message_id, add_label_ids, remove_label_ids):
+        raise KeyboardInterrupt
+
+    mailbox.modify = interrupted
+
+    result = CliRunner().invoke(cli.app, ["--plain", "undo", run_id, "--apply"])
+
+    assert result.exit_code == 1
+    assert result.stdout.splitlines() == [f"undo run={run_id} mode=apply undone=0 skipped=0"]
+    assert str(result.exception) == (
+        f"undo stopped after 0 of 2 messages; "
+        f"run inbox-sorter undo {run_id} --apply again to finish"
+    )
+
+
+def test_ctrl_c_during_undo_sign_in_changes_nothing(tmp_path, monkeypatch):
+    mailbox, _, run_id = applied_run(tmp_path, monkeypatch)
+
+    def connect(state_dir):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connect))
+    calls = len(mailbox.modify_calls)
+
+    result = CliRunner().invoke(cli.app, ["--plain", "undo", run_id, "--apply"])
+
+    assert result.exit_code == 1 and result.stdout == ""
+    assert str(result.exception).startswith("undo stopped after 0 of 2 messages")
+    assert len(mailbox.modify_calls) == calls

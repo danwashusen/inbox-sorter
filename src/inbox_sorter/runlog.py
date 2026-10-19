@@ -1,14 +1,16 @@
 """The run log: one JSON line per applied decision in runs.jsonl (R-run-log).
 
 Each line is written and synced before its Gmail change is made, so undo
-never misses a change. No sender, subject, snippet or body is logged.
+never misses a change; ``read_log`` reads the lines back for ``undo``. No
+sender, subject, snippet or body is logged.
 """
 
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 from inbox_sorter.errors import UserError, error_reason
 from inbox_sorter.types import Decision
@@ -17,7 +19,7 @@ RUN_LOG_NAME = "runs.jsonl"
 
 
 class RunLogError(UserError):
-    """The run log cannot be written."""
+    """The run log cannot be read or written."""
 
 
 def log_line(run_id: str, engine: str, decision: Decision, added: Mapping[str, str]) -> str:
@@ -69,3 +71,71 @@ class RunLog:
             raise RunLogError(
                 f"cannot write the run log {self.path}: {error_reason(error)}"
             ) from error
+
+
+# The only labels an applied decision removes (triage), so the only ones undo
+# adds back. Anything else, such as a hand-edited TRASH, is refused.
+RESTORABLE = frozenset({"INBOX", "UNREAD"})
+
+
+@dataclass(frozen=True)
+class LoggedChange:
+    """One logged line: what an apply run changed on one message."""
+
+    run_id: str
+    message_id: str
+    added: dict[str, str]  # each label name the run added to its ID, in log order
+    removed: tuple[str, ...]  # the system labels the run removed
+
+
+def read_log(path: Path) -> list[LoggedChange]:
+    """Every line of the log at ``path``, in file order.
+
+    Fails closed: any line that cannot be read raises RunLogError, as undo
+    needs every line to tell which changes a later run superseded. Blank
+    lines and keys undo doesn't use are ignored.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError as error:
+        raise RunLogError(
+            f"no applied run has been logged yet: {path} does not exist"
+        ) from error
+    except (OSError, UnicodeDecodeError) as error:
+        raise RunLogError(f"cannot read the run log {path}: {error_reason(error)}") from error
+    changes = []
+    for number, line in enumerate(text.split("\n"), start=1):
+        if not line.strip():
+            continue
+        change = _parse(line)
+        if change is None:
+            raise RunLogError(
+                f"{path} line {number} is not a run-log line; fix or delete it, then undo again"
+            )
+        changes.append(change)
+    return changes
+
+
+def _parse(line: str) -> LoggedChange | None:
+    try:
+        fields: Any = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(fields, dict):
+        return None
+    run_id, message_id = fields.get("run"), fields.get("id")
+    add, add_ids, remove = fields.get("add"), fields.get("add_ids"), fields.get("remove")
+    if not (isinstance(run_id, str) and isinstance(message_id, str)):
+        return None
+    if not all(_strings(value) for value in (add, add_ids, remove)):
+        return None
+    if len(add) != len(add_ids) or not set(remove) <= RESTORABLE:
+        return None
+    added = dict(zip(add, add_ids, strict=True))
+    if len(added) != len(add):  # the writer logs each name once
+        return None
+    return LoggedChange(run_id, message_id, added, tuple(remove))
+
+
+def _strings(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
