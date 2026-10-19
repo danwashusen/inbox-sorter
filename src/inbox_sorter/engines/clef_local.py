@@ -9,6 +9,8 @@ from inbox_sorter.engines.systemone import from_response_body, to_request_body
 
 
 TORCH_REDIRECTS_LOGGER = "torch.distributed.elastic.multiprocessing.redirects"
+# Warns on the first decision that it uses slower reference kernels.
+KERNELS_LOGGER = "transformers.integrations.hub_kernels"
 
 
 def _errors_only(record: logging.LogRecord) -> bool:
@@ -26,12 +28,13 @@ class ClefLocalEngine:
         from huggingface_hub.utils import disable_progress_bars
         from transformers.utils import logging as transformers_logging
 
-        # Quiet the load: no progress bars once the weights are on disk, and no
-        # library warnings (slower-kernel fallbacks) or torch's macOS note.
-        # A first download still shows its progress.
-        transformers_logging.set_verbosity_error()
+        # Quiet the load: no progress bars once the weights are on disk, and
+        # no slower-kernel warnings or torch's macOS note. Other warnings,
+        # such as weights missing from the checkpoint, still show, and a
+        # first download still shows its progress.
         transformers_logging.disable_progress_bar()
-        logging.getLogger(TORCH_REDIRECTS_LOGGER).addFilter(_errors_only)
+        for name in (KERNELS_LOGGER, TORCH_REDIRECTS_LOGGER):
+            logging.getLogger(name).addFilter(_errors_only)
         try:
             snapshot_download(model_id, local_files_only=True)
             bars = disable_progress_bars()

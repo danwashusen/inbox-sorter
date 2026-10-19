@@ -168,7 +168,7 @@ class Dashboard:
         self._table = TableReporter(out)  # only for its lines; never writes
         self._console = Console(file=out, highlight=False)
         self._live: Live | None = None
-        self._rerouted: list[tuple[logging.StreamHandler, object]] = []
+        self._streams: tuple[tuple[object, ...], tuple[object, ...]] | None = None
         # Set from the SIGINT handler and the q thread: a bare attribute,
         # no lock or I/O (see stop.StopFlag).
         self.stopping: str | None = None
@@ -183,14 +183,22 @@ class Dashboard:
             refresh_per_second=4,
         )
         self._live.start()  # in a terminal, swaps sys.stdout and sys.stderr for proxies
-        self._rerouted = _reroute_logging(streams, (sys.stdout, sys.stderr))
+        proxies = sys.stdout, sys.stderr
+        try:
+            _reroute_logging(streams, proxies)
+        except BaseException:
+            self.__exit__()
+            raise
+        self._streams = streams, proxies
         return self
 
     def __exit__(self, *exc: object) -> None:
         try:
-            for handler, stream in self._rerouted:
-                handler.setStream(stream)  # before the proxies go
-            self._rerouted = []
+            if self._streams is not None:
+                streams, proxies = self._streams
+                self._streams = None
+                # Before the proxies go; this also catches handlers made during the run.
+                _reroute_logging(proxies, streams)
         finally:
             if self._live is not None:
                 self._live.stop()  # transient: erases the panel, keeps the rows above it
@@ -268,21 +276,17 @@ class Dashboard:
         )
 
 
-def _reroute_logging(
-    old: tuple[object, ...], new: tuple[object, ...]
-) -> list[tuple[logging.StreamHandler, object]]:
+def _reroute_logging(old: tuple[object, ...], new: tuple[object, ...]) -> None:
     """Point logging handlers that hold a stream in ``old`` at its match in ``new``.
 
     A library's handler keeps the stderr it was made with, so a warning
     during the run (transformers logs some on clef's first decision) would
     write past Rich's proxy and break the panel's redraw. Rerouted, it prints
     above the panel. Handlers that look up sys.stderr on each write, such as
-    logging's last resort, already follow the proxy. Returns each handler
-    moved with its old stream, to put back.
+    logging's last resort, already follow the proxy.
     """
     if old == new:  # not a terminal: Live installed no proxies
-        return []
-    moved = []
+        return
     loggers = [logging.getLogger(), *logging.Logger.manager.loggerDict.values()]
     for logger in loggers:
         for handler in getattr(logger, "handlers", ()):  # a PlaceHolder has none
@@ -290,8 +294,6 @@ def _reroute_logging(
             stream = vars(handler).get("stream")
             if isinstance(handler, logging.StreamHandler) and stream in old:
                 handler.setStream(new[old.index(stream)])
-                moved.append((handler, stream))
-    return moved
 
 
 def _cropped(text: str) -> Text:

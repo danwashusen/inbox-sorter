@@ -210,14 +210,18 @@ def test_a_library_warning_prints_above_the_panel_not_past_it(monkeypatch):
     handler = logging.StreamHandler()
     logger = logging.getLogger("tests.library")
     logger.addHandler(handler)
-    logger.propagate = False
+    monkeypatch.setattr(logger, "propagate", False)
     out = Terminal()
+    late = None
     try:
         with Dashboard(SummaryTally(CONFIG), out):
             logger.warning("falling back to a slower kernel")
+            late = logging.StreamHandler()  # made during the run: holds the proxy
+            logger.addHandler(late)
         logger.warning("after the run")
     finally:
         logger.removeHandler(handler)
+        logger.removeHandler(late)
 
     assert "falling back to a slower kernel" in out.getvalue()
-    assert stderr.getvalue() == "after the run\n"
+    assert stderr.getvalue() == "after the run\n" * 2  # both handlers have stderr back
