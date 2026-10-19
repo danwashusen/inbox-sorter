@@ -40,9 +40,47 @@ def test_plain_stdout_holds_only_records_even_when_sign_in_prints(tmp_path, monk
 
     assert result.exit_code == 0, result.output
     records = [json.loads(line) for line in result.stdout.splitlines()]
-    assert [r["event"] for r in records] == ["started", "decided", "decided", "finished"]
+    assert [r["event"] for r in records] == [
+        "started", "decided", "decided", "finished", "total", "summary",
+    ]  # fmt: skip
+    assert records[-1]["mode"] == "dry-run"
     assert "Please visit this URL" in result.stderr
     assert "loading the clef model" in result.stderr
+    assert not (tmp_path / "runs.jsonl").exists()
+
+
+def apply_cli(tmp_path, monkeypatch, mailbox):
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(lambda state_dir: mailbox))
+    monkeypatch.setattr(cli, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(cli, "make_engine", lambda kind: FakeEngine(lambda request: answers()))
+    config = tmp_path / "inbox-sorter.toml"
+    config.write_text(CONFIG)
+    return CliRunner().invoke(cli.app, ["--json", "run", "--apply", "--config", str(config)])
+
+
+def test_apply_logs_each_decision_and_changes_gmail(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+
+    result = apply_cli(tmp_path, monkeypatch, mailbox)
+
+    assert result.exit_code == 0, result.output
+    lines = (tmp_path / "runs.jsonl").read_text().splitlines()
+    assert [json.loads(line)["id"] for line in lines] == ["m1", "m2"]
+    assert len(mailbox.modify_calls) == 2
+    summary = json.loads(result.stdout.splitlines()[-1])
+    assert (summary["event"], summary["mode"], summary["decided"]) == ("summary", "apply", 2)
+
+
+def test_a_fatal_error_mid_apply_still_prints_the_summary(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    mailbox.fail_modify = {"m2"}
+
+    result = apply_cli(tmp_path, monkeypatch, mailbox)
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, MailboxError)
+    events = [json.loads(line)["event"] for line in result.stdout.splitlines()]
+    assert events == ["started", "decided", "total", "summary"]
 
 
 def test_no_enabled_category_names_the_config_file(tmp_path):
