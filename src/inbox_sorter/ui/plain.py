@@ -9,7 +9,15 @@ import json
 import unicodedata
 from typing import Any, TextIO
 
-from inbox_sorter.types import MessageDecided, MessageFailed, RunEvent, RunFinished, RunStarted
+from inbox_sorter.types import (
+    MessageDecided,
+    MessageFailed,
+    Retrying,
+    RunEvent,
+    RunFinished,
+    RunStarted,
+    RunStopped,
+)
 
 # Escapes inside a quoted logfmt value; other unsafe characters become \uXXXX.
 ESCAPES = {"\\": "\\\\", '"': '\\"', "\n": "\\n", "\t": "\\t", "\r": "\\r"}
@@ -51,6 +59,23 @@ def plain_line(event: RunEvent, json_lines: bool) -> str:
         case RunFinished():
             name = "finished"
             fields = {"run": event.run_id, "decided": event.decided, "failed": event.failed}
+        case Retrying():
+            name = "retrying"
+            fields = {
+                "id": event.message_id,  # None, printed empty, while listing
+                "attempt": event.attempt,
+                "of": event.attempts,
+                "delay": event.delay,
+                "error": event.error,
+            }
+        case RunStopped():
+            name = "stopped"
+            fields = {
+                "run": event.run_id,
+                "decided": event.decided,
+                "failed": event.failed,
+                "remaining": event.remaining,
+            }
     return record(name, fields, json_lines)
 
 

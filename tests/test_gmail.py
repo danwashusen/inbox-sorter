@@ -488,6 +488,32 @@ def test_gmail_errors_become_mailbox_errors_with_the_status():
     assert caught.value.status == 503
 
 
+@pytest.mark.parametrize(
+    "status, content, transient",
+    [
+        (429, b"", True),
+        (500, b"", True),
+        (503, b"", True),
+        (403, b'{"error": {"errors": [{"reason": "rateLimitExceeded"}]}}', True),
+        (403, b'{"error": {"errors": [{"reason": "userRateLimitExceeded"}]}}', True),
+        (403, b'{"error": {"errors": [{"reason": "insufficientPermissions"}]}}', False),
+        (404, b"", False),
+        (409, b"", False),
+    ],
+)
+def test_rate_limits_and_server_errors_are_transient(status, content, transient):
+    import httplib2
+    from googleapiclient.errors import HttpError
+
+    error = HttpError(httplib2.Response({"status": status}), content)
+    service = StubService({"messages.get": error})
+
+    with pytest.raises(MailboxError) as caught:
+        GmailMailbox(service).get_message("m1")
+
+    assert (caught.value.status, caught.value.transient) == (status, transient)
+
+
 def bare_transport_error():
     from google.auth.exceptions import TransportError
 
@@ -518,6 +544,7 @@ def test_network_errors_become_mailbox_errors_without_a_status(make_error):
         GmailMailbox(service).get_body("m1", 50)
 
     assert caught.value.status is None
+    assert caught.value.transient is True
     assert not str(caught.value).endswith(": ")
 
 
@@ -526,8 +553,9 @@ def test_a_failed_token_refresh_during_a_read_is_a_mailbox_error():
 
     service = StubService({"messages.list": RefreshError("invalid_grant")})
 
-    with pytest.raises(MailboxError, match="delete token.json"):
+    with pytest.raises(MailboxError, match="delete token.json") as caught:
         GmailMailbox(service).list_unprocessed()
+    assert caught.value.transient is False
 
 
 def test_a_failed_refresh_during_a_read_names_the_connected_token_path(tmp_path, monkeypatch):

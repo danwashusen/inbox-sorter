@@ -92,4 +92,25 @@ class RunFinished:
     failed: int
 
 
-RunEvent = RunStarted | MessageDecided | MessageFailed | RunFinished
+@dataclass(frozen=True)
+class Retrying:
+    """Yielded before each backoff wait on a transient Gmail error (R-retry-transient)."""
+
+    message_id: str | None  # None while listing
+    attempt: int  # 1 for the first retry
+    attempts: int  # the most retries this step gets
+    delay: float  # seconds
+    error: str
+
+
+@dataclass(frozen=True)
+class RunStopped:
+    """Ends a run stopped on request, in place of RunFinished (R-graceful-stop)."""
+
+    run_id: str
+    decided: int
+    failed: int
+    remaining: int  # listed but not reached; a rerun picks them up
+
+
+RunEvent = RunStarted | MessageDecided | MessageFailed | RunFinished | Retrying | RunStopped

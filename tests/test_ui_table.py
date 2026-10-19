@@ -1,7 +1,14 @@
 import io
 
 from inbox_sorter.triage import decide
-from inbox_sorter.types import MessageDecided, MessageFailed, RunFinished, RunStarted
+from inbox_sorter.types import (
+    MessageDecided,
+    MessageFailed,
+    Retrying,
+    RunFinished,
+    RunStarted,
+    RunStopped,
+)
 from inbox_sorter.ui.table import TableReporter, planned_actions
 from tests.factories import make_config, make_email, response
 
@@ -102,3 +109,27 @@ def test_wide_characters_are_measured_in_terminal_cells():
     row = out.getvalue().splitlines()[0]
     # 8 cells of sender pad to 20; 34 cells of subject plus "…" pad to 36.
     assert row.startswith("山田太郎" + " " * 12 + "  " + "会議" * 8 + "会… " + "  receipts")
+
+
+def test_a_retry_shows_the_wait_attempt_and_error_on_one_line():
+    out = io.StringIO()
+
+    TableReporter(out)(Retrying("m1", 3, 10, 4.0, "Gmail request\nfailed (503)"))
+
+    assert out.getvalue() == "retrying in 4s (attempt 3 of 10): Gmail request failed (503)\n"
+
+
+def test_a_stopped_run_says_what_is_left_in_each_mode():
+    out = io.StringIO()
+    report = TableReporter(out)
+
+    report(RunStarted("r1", dry_run=True, engine="clef-local", total=5))
+    report(RunStopped("r1", decided=2, failed=1, remaining=2))
+    report(RunStarted("r2", dry_run=False, engine="clef-local", total=5))
+    report(RunStopped("r2", decided=2, failed=0, remaining=3))
+
+    lines = out.getvalue().splitlines()
+    assert lines[2] == "Dry run stopped: 2 planned, 1 failed, 2 not decided. Gmail was not changed."
+    assert lines[5] == (
+        "Stopped: 2 changed, 0 failed, 3 left. Run the same command again to resume."
+    )

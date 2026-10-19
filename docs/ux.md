@@ -56,12 +56,12 @@ reads in a monochrome terminal.
 
 ## Long runs
 
-- `run --all` keeps going until no unprocessed inbox mail is left. Without
-  it, a run stops at `max_messages`.
+- `run --all` handles all unprocessed inbox mail listed at the start; new
+  mail waits for the next run. Without it, a run stops at `max_messages`.
 - Each message is finished, logged and marked `Sorter/_processed` before
   the next one starts. A crash or stop loses at most the message in flight.
-- Rerunning after a stop resumes where it left off. The total and ETA
-  count only the remaining mail.
+- An `--apply` rerun resumes where the last run stopped; the total and ETA
+  count only the remaining mail. A dry run marks nothing, so it starts over.
 - The rate and ETA use a moving average of recent messages, so they settle
   after a few minutes and follow slowdowns such as body retries.
 - The Mac is kept awake for the length of the run and released on exit.
@@ -69,11 +69,11 @@ reads in a monochrome terminal.
 
 ## Stopping
 
-- `q` finishes the current message, prints the summary and exits.
-- The first Ctrl-C behaves like `q`. A second Ctrl-C aborts at once; the
-  message in flight is left unprocessed and retried next run.
-- Transient Gmail errors, such as rate limits, retry with backoff and show
-  a status line in the panel. A run stops only on errors it cannot retry.
+- `q` finishes the current message, prints the summary and exits 0.
+- The first Ctrl-C behaves like `q`. A second Ctrl-C aborts at once, prints
+  the summary and exits 1; the message in flight is left for the next run.
+- Transient Gmail errors, such as rate limits, retry with backoff, shown in
+  the panel or a `retrying` record. A run stops only on errors it cannot retry.
 
 ## Summary
 
@@ -106,9 +106,8 @@ a Ctrl-C shows the counts and how to finish; a Ctrl-C at sign-in shows only how.
 
 ## Plain mode
 
-When output is not a terminal, or with `--plain`, the run prints one line
-per decision and a periodic progress line instead of the panel. The
-format is stable so it can be piped to a file or `grep`.
+When output is not a terminal, or with `--plain`, the run prints stable
+records instead of the panel, ready to pipe to a file or `grep`.
 
 The shared options go before the command: `inbox-sorter --plain run`. Each line
 is a logfmt record: its name, then `key=value` pairs in a fixed order.
@@ -119,7 +118,10 @@ is a logfmt record: its name, then `key=value` pairs in a fixed order.
   sender=<sender> subject=<subject>`, on one line
 - `failed id=<message-id> error=<text>`
 - `progress done=<n> total=<n>`, after every 10th message except the last
-- `finished run=<run-id> decided=<n> failed=<n>`
+- `retrying id=<message-id> attempt=<n> of=<n> delay=<seconds>
+  error=<text>`, before each retry wait; `id` is empty while listing
+- `finished run=<run-id> decided=<n> failed=<n>`, or
+  `stopped run=<run-id> decided=<n> failed=<n> remaining=<n>` after a stop
 - `total category=<id> label=<label> messages=<n> labelled=<n>
   archived=<n> read=<n>`, one per category with mail
 - `summary run=<run-id> mode=<dry-run|apply> decided=<n> failed=<n>
@@ -173,8 +175,7 @@ Without a terminal, or with `--plain` or `--json`, `setup` asks the same
 questions as line prompts on stdin: `[Y/n]` confirms, `[<default>]` text
 and numbered choices. Enter takes the default. If input ends early, or on
 Ctrl-C during the prompts or sign-in, `setup` exits 1 and writes nothing.
-Ctrl-C during the accuracy check exits 1 but keeps the config already
-written.
+Ctrl-C during the accuracy check exits 1 but keeps the written config.
 
 The accuracy report at the end uses the same category bars as the run
 dashboard. While messages are decided, a transient progress bar shows
@@ -184,8 +185,7 @@ dashboard. While messages are decided, a transient progress bar shows
 - One bar per enabled category, filled by its share of correct guesses,
   with `<correct>/<sampled>  <pct>%` as text, or `no labelled mail`.
 - `Most common confusions`: up to 5 lines of
-  `<actual label> → <predicted label>  <count>`, left out when there are
-  none.
+  `<actual label> → <predicted label>  <count>`, left out if there are none.
 
 A guess is correct when the message already carries the chosen
 category's label. When no enabled category's label has any mail,

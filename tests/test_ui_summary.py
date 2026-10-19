@@ -4,15 +4,19 @@ from dataclasses import replace
 
 import pytest
 
-from inbox_sorter.summary import CategoryTotal, RunSummary
+from inbox_sorter.summary import CategoryTotal, RunSummary, SummaryTally
+from inbox_sorter.triage import decide
+from inbox_sorter.types import MessageDecided, RunStarted
 from inbox_sorter.ui.summary import (
     category_actions,
     format_elapsed,
+    notification_text,
     print_summary,
     summary_heading,
     summary_lines,
     summary_records,
 )
+from tests.factories import make_config, make_email, response
 
 SUMMARY = RunSummary(
     run_id="20261019-140211",
@@ -89,3 +93,24 @@ def test_print_summary_renders_without_categories():
     print_summary(replace(SUMMARY, categories=(), decided=0), out)
 
     assert out.getvalue().startswith("Summary · APPLY · 0 decided")
+
+
+def test_notification_text_for_finished_runs_and_errors():
+    dry = replace(SUMMARY, dry_run=True)
+
+    assert notification_text(SUMMARY, None) == "Run 20261019-140211 finished: 1,544 decided, 2 failed"
+    assert notification_text(dry, None) == "Dry run 20261019-140211 finished: 1,544 decided, 2 failed"
+    assert notification_text(SUMMARY, "boom") == "Run 20261019-140211 stopped on an error: boom"
+    assert notification_text(None, "boom") == "Run stopped on an error: boom"
+
+
+def test_notification_text_carries_no_email_content():
+    config = make_config()
+    email = make_email(sender="Secret Sender <s@x.example>", subject="Secret subject")
+    tally = SummaryTally(config)
+    tally(RunStarted("r1", dry_run=False, engine="fake", total=1))
+    tally(MessageDecided(email, decide(email, response(), config, False)))
+
+    text = notification_text(tally.summary(), None)
+
+    assert "Secret" not in text and "@" not in text

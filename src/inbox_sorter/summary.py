@@ -9,7 +9,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from inbox_sorter.config import Config
-from inbox_sorter.types import MessageDecided, MessageFailed, RunEvent, RunFinished, RunStarted
+from inbox_sorter.types import (
+    MessageDecided,
+    MessageFailed,
+    RunEvent,
+    RunFinished,
+    RunStarted,
+    RunStopped,
+)
 
 
 @dataclass(frozen=True)
@@ -39,8 +46,8 @@ class RunSummary:
 class SummaryTally:
     """A reporter that counts each RunEvent; ``summary()`` gives the totals so far.
 
-    Elapsed time runs from RunStarted to RunFinished, or to now on ``clock``
-    when the run has not finished.
+    Elapsed time runs from RunStarted to RunFinished or RunStopped, or to now
+    on ``clock`` when the run has not ended. Retrying changes no count.
     """
 
     def __init__(self, config: Config, clock: Callable[[], float] = time.monotonic) -> None:
@@ -76,7 +83,7 @@ class SummaryTally:
                 self._flags["low_confidence"] += decision.low_confidence
             case MessageFailed():
                 self._flags["failed"] += 1
-            case RunFinished():
+            case RunFinished() | RunStopped():
                 self._end = self._clock()
 
     def summary(self) -> RunSummary:

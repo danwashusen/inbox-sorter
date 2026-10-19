@@ -1,5 +1,7 @@
+import contextlib
 import json
 import os
+import signal
 
 import pytest
 
@@ -9,6 +11,7 @@ from inbox_sorter import cli
 from inbox_sorter.config import load_config
 from inbox_sorter.engines.fake import FakeEngine
 from inbox_sorter.gmail import LabelInfo, MailboxError
+from inbox_sorter.stop import STOPPING
 from tests.factories import answers, make_email
 from tests.fake_mailbox import FakeMailbox
 
@@ -22,6 +25,19 @@ description = "Order confirmation, shipping update, invoice or receipt"
 actions = ["label", "archive", "mark_read"]
 min_confidence = 0.85
 """
+
+
+@pytest.fixture(autouse=True)
+def system_calls(monkeypatch):
+    """No test spawns caffeinate or osascript; notices and notifications are recorded.
+
+    write_stderr uses os.write(2, …), which CliRunner's captured stderr would miss.
+    """
+    calls = {"notify": [], "stderr": []}
+    monkeypatch.setattr(cli, "keep_awake", contextlib.nullcontext)
+    monkeypatch.setattr(cli, "notify", calls["notify"].append)
+    monkeypatch.setattr(cli, "write_stderr", calls["stderr"].append)
+    return calls
 
 
 def test_plain_stdout_holds_only_records_even_when_sign_in_prints(tmp_path, monkeypatch):
@@ -592,3 +608,122 @@ def test_ctrl_c_during_undo_sign_in_changes_nothing(tmp_path, monkeypatch):
     assert result.exit_code == 1 and result.stdout == ""
     assert str(result.exception).startswith("undo stopped after 0 of 2 messages")
     assert len(mailbox.modify_calls) == calls
+
+
+# Long runs
+
+
+def interrupting_engine(times):
+    """An engine that sends this process ``times`` SIGINTs while deciding the first message."""
+
+    def decide(request):
+        if request.state["subject"] == "Order m1":
+            for _ in range(times):
+                os.kill(os.getpid(), signal.SIGINT)  # the handler runs before the next send
+        return answers()
+
+    return FakeEngine(decide)
+
+
+def long_run_args(tmp_path, monkeypatch, mailbox, engine=None):
+    config = setup_cli(tmp_path, monkeypatch, mailbox, engine or FakeEngine(lambda r: answers()))
+    config.write_text(CONFIG)
+    return ["--json", "run", "--config", str(config)]
+
+
+def test_all_with_a_limit_is_a_usage_error_before_sign_in(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email("m1")])
+    args = long_run_args(tmp_path, monkeypatch, mailbox)
+    connects = []
+    monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connects.append))
+
+    result = CliRunner().invoke(cli.app, [*args, "--all", "--limit", "5"])
+
+    assert result.exit_code == 2
+    assert "--all and --limit cannot be used together" in result.output
+    assert connects == []
+
+
+def test_all_runs_past_max_messages(tmp_path, monkeypatch):
+    mailbox = FakeMailbox([make_email(f"m{n}") for n in range(3)])
+    args = long_run_args(tmp_path, monkeypatch, mailbox)
+    config = tmp_path / "inbox-sorter.toml"
+    config.write_text("[run]\nmax_messages = 1\n" + CONFIG)
+
+    result = CliRunner().invoke(cli.app, [*args, "--all"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout.splitlines()[0])["total"] == 3
+
+
+def test_one_ctrl_c_finishes_the_message_prints_the_summary_and_exits_0(
+    tmp_path, monkeypatch, system_calls
+):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    args = long_run_args(tmp_path, monkeypatch, mailbox, interrupting_engine(1))
+    before = signal.getsignal(signal.SIGINT)
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == 0, result.output
+    records = [json.loads(line) for line in result.stdout.splitlines()]
+    assert [r["event"] for r in records] == ["started", "decided", "stopped", "total", "summary"]
+    assert (records[2]["decided"], records[2]["remaining"]) == (1, 1)
+    assert system_calls["stderr"] == [STOPPING]
+    assert system_calls["notify"] == []  # whoever stopped it is at the keyboard
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_a_second_ctrl_c_aborts_after_the_summary_and_exits_1(
+    tmp_path, monkeypatch, capsys, system_calls
+):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    args = long_run_args(tmp_path, monkeypatch, mailbox, interrupting_engine(2))
+    monkeypatch.setattr(cli.sys, "argv", ["inbox-sorter", *args, "--apply"])
+    before = signal.getsignal(signal.SIGINT)
+
+    with pytest.raises(SystemExit) as exited:
+        cli.main()
+
+    out, err = capsys.readouterr()
+    assert exited.value.code == 1
+    assert [json.loads(line)["event"] for line in out.splitlines()] == ["started", "summary"]
+    assert f"error: {cli.ABORTED}" in err
+    assert mailbox.modify_calls == []  # m1 was in flight, so left unprocessed
+    assert system_calls["notify"] == []
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_a_finished_run_sends_one_notification(tmp_path, monkeypatch, system_calls):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+
+    result = apply_cli(tmp_path, monkeypatch, mailbox)
+
+    assert result.exit_code == 0, result.output
+    [text] = system_calls["notify"]
+    run_id = json.loads(result.stdout.splitlines()[-1])["run"]
+    assert text == f"Run {run_id} finished: 2 decided, 0 failed"
+
+
+def test_a_fatal_error_mid_apply_sends_one_notification_with_the_error(
+    tmp_path, monkeypatch, system_calls
+):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    mailbox.fail_modify = {"m2"}
+
+    result = apply_cli(tmp_path, monkeypatch, mailbox)
+
+    assert result.exit_code == 1
+    [text] = system_calls["notify"]
+    assert text.endswith("stopped on an error: modify failed for 'm2'")
+
+
+def test_an_error_before_the_run_starts_still_notifies(tmp_path, monkeypatch, system_calls):
+    class Unlistable(FakeMailbox):
+        def list_unprocessed(self, page_token=None, page_size=100):
+            raise MailboxError("Gmail request failed (404): gone", status=404)
+
+    result = apply_cli(tmp_path, monkeypatch, Unlistable([make_email("m1")]))
+
+    assert result.exit_code == 1
+    assert system_calls["notify"] == ["Run stopped on an error: Gmail request failed (404): gone"]
