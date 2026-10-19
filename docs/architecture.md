@@ -98,8 +98,8 @@ The loop lists IDs first (A-run-events), then works through them in order:
    engine answers again (R-body-retry).
 4. `triage` returns the `Decision`.
 5. A dry run stops here; an apply run resolves labels, then `runlog` logs.
-6. `gmail` applies one `messages.modify` call that adds the category,
-   flag and `Sorter/_processed` labels and removes `INBOX` or `UNREAD`.
+6. `gmail` makes at most one `messages.modify`: add the category, flag
+   and `Sorter/_processed` labels it lacks; remove `INBOX` or `UNREAD`.
 
 A single modify call per message makes each message all-or-nothing.
 A crash leaves it unprocessed, so the next run retries it (R-resumable).
@@ -252,6 +252,6 @@ Accepted items move here with an `A-<slug>` ID.
 - A-accuracy-check: `check_accuracy` decides as `run` does, through
   `runner.decide_message`; a guess is right if the message has its label.
 - A-category-bars: `ui/bars.py` draws the bars for setup and the dashboard.
-- A-run-log: apply runs alone log, to `runs.jsonl`: a synced line, one modify.
+- A-run-log: apply runs log to `runs.jsonl`: a synced line, at most one modify.
 - A-label-resolver: once per run; creates ancestors first; exact-case (#19).
 - A-run-summary: `summary.SummaryTally` tallies; `ui/summary.py` renders.
