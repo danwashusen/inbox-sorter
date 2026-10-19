@@ -85,6 +85,25 @@ def print_summary(summary: RunSummary, out: TextIO) -> None:
         console.print(Text(one_line(line)))
 
 
+def notification_text(summary: RunSummary | None, error: str | None) -> str:
+    """The macOS notification for a finished run or a fatal error (R-notify).
+
+    ``summary`` is None when the run ended before it started. Counts only:
+    no email content leaves the terminal (C-local-only).
+    """
+    if error is not None:
+        if summary is None:
+            return f"Run stopped on an error: {error}"
+        return f"Run {summary.run_id} stopped on an error: {error}"
+    if summary is None:
+        raise ValueError("a finished run needs its summary")
+    mode = "Dry run" if summary.dry_run else "Run"
+    return (
+        f"{mode} {summary.run_id} finished: {summary.decided:,} decided, "
+        f"{summary.failed:,} failed"
+    )
+
+
 def summary_records(summary: RunSummary, json_lines: bool) -> list[str]:
     """One total record per category, then the summary record."""
     lines = [

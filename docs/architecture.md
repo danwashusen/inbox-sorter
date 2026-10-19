@@ -49,22 +49,19 @@ The others are planned.
   plain-text body, manages labels, and applies one modify call per
   message. `LabelResolver` maps label names to IDs.
 - `types.py` **(exists)**: the core types below.
-- `errors.py` **(exists)**: `UserError`, the base of every expected
-  failure the CLI reports as one line.
+- `errors.py` **(exists)**: `UserError`, the base of every expected failure.
 - `storage.py` **(exists)**: finds and creates the state directory.
-- `engine.py` **(exists)**: the `DecisionEngine` protocol and
-  engine-neutral request and answer types.
+- `engine.py` **(exists)**: the `DecisionEngine` protocol and neutral types.
 - `engines/` **(exists)**: one adapter per engine, chosen by
   `make_engine(kind)`. Only adapters import engine libraries such as torch
   or an HTTP client.
 - `state.py` **(exists)**: turns an email into the state an engine reads.
-- `questions.py` **(exists)**: builds the category, `needs_reply` and
-  `urgency` questions from config, in engine-neutral form.
+- `questions.py` **(exists)**: builds the three engine-neutral questions.
 - `triage.py` **(exists)**: pure functions from answers and config to a
   `Decision`. Holds every policy rule: thresholds, body retry, flags, and
   keeping flagged mail in the inbox.
-- `runner.py` **(exists)**: the run loop. Fetch, classify, retry,
-  decide, log, apply. Emits `RunEvent`s; #12 adds a stop flag.
+- `runner.py` **(exists)**: the run loop: fetch, classify, decide, log,
+  apply. Emits `RunEvent`s; stops on request; retries transient errors.
 - `runlog.py` and `undo.py` **(exist)**: the run log, one JSON line per
   applied decision, and `undo`, which reverses a run's own lines.
 - `summary.py` **(exists)**: tallies `RunEvent`s into the run summary.
@@ -75,7 +72,8 @@ The others are planned.
   **(exist)**: plain lines, the run table shown until the panel lands,
   `setup` prompts, category bars, the accuracy report, the run summary,
   progress bars and the undo output.
-- `system.py`: `caffeinate` and notifications via subprocess.
+- `system.py` and `stop.py` **(exist)**: `caffeinate`, notifications, and
+  the stop flag with its Ctrl-C and `q` listeners.
 
 ## Core types
 
@@ -85,14 +83,14 @@ Plain frozen dataclasses in `types.py`, shared by every module.
 - `Probabilities`: the category, `needs_reply` and `urgency` probabilities.
 - `Decision`: message ID, category, confidence, the two flags, labels to
   add and remove, low confidence, body use and `Probabilities`.
-- `RunEvent`: `RunStarted`, `MessageDecided`, `MessageFailed` and
-  `RunFinished` so far; a retrying variant comes with retries.
+- `RunEvent`: `RunStarted`, `MessageDecided`, `MessageFailed`,
+  `RunFinished`, `Retrying` and `RunStopped`.
 
 ## Run loop
 
 The loop lists IDs first (A-run-events), then works through them in order:
 
-1. `gmail` lists inbox IDs without `Sorter/_processed`, up to the cap.
+1. `gmail` lists inbox IDs without `Sorter/_processed`; `--all` lifts the cap.
 2. `gmail` fetches metadata; the engine answers the three questions.
 3. If `triage` says confidence is low, `gmail` fetches the body and the
    engine answers again (R-body-retry).
@@ -101,12 +99,12 @@ The loop lists IDs first (A-run-events), then works through them in order:
 6. `gmail` makes at most one `messages.modify`: add the category, flag
    and `Sorter/_processed` labels it lacks; remove `INBOX` or `UNREAD`.
 
-A single modify call per message makes each message all-or-nothing.
-A crash leaves it unprocessed, so the next run retries it (R-resumable).
-Writing the log before applying means `undo` never misses a change.
+One modify call per message makes each message all-or-nothing. A crash
+leaves it unprocessed, so the next run retries it (R-resumable). Logging
+before applying means `undo` never misses a change.
 
-Gmail and engine work alternate, with no threads in v1. At about
-2.6 s per message, the model dominates, and Gmail calls add little.
+Gmail and engine work alternate in one thread; `q` is read in another. At
+about 2.6 s per message, the model dominates, and Gmail calls add little.
 
 ## Decision engines
 
@@ -160,8 +158,9 @@ Switching engines has three consequences the design accounts for:
   repo (C-no-secrets).
 - Labels are resolved by name to IDs once per run and created when
   missing (R-create-missing-labels).
-- Rate-limit and 5xx errors retry with exponential backoff and emit a
-  `retrying` event (R-retry-transient).
+- Rate-limit, 5xx and network errors are marked transient
+  (`MailboxError.transient`); the runner retries them with backoff and
+  yields `Retrying` (R-retry-transient).
 - The body is the `text/plain` part, cut to `body_chars`. Mail with only
   HTML falls back to text extracted with the standard `html.parser`.
 
@@ -196,8 +195,7 @@ Gmail (C-fast-tests).
 
 New runtime dependencies, each with its reason (C-few-dependencies):
 
-- `google-api-python-client` and `google-auth-oauthlib`: Gmail API and
-  OAuth.
+- `google-api-python-client` and `google-auth-oauthlib`: Gmail and OAuth.
 - `typer`, `rich` and `questionary`: the CLI, dashboard and prompts
   chosen in the UX spec.
 
@@ -224,9 +222,9 @@ Accepted items move here with an `A-<slug>` ID.
   exception, with any HTTP status. The Google libraries are imported only
   inside the functions that call Gmail, so the core never loads them.
 - A-core-types: `Email`, `Decision` and the `RunEvent` variants
-  `RunStarted`, `MessageDecided`, `MessageFailed` and `RunFinished` are
-  frozen dataclasses in `types.py`. `Decision` holds label names,
-  resolved to IDs when applied. `RunEvent` variants are only added.
+  (`RunStarted`, `MessageDecided`, `MessageFailed`, `RunFinished`,
+  `Retrying`, `RunStopped`) are frozen dataclasses in `types.py`. `Decision`
+  holds label names, resolved to IDs when applied. Variants are only added.
 - A-typed-config: `load_config` in `config.py` reads `inbox-sorter.toml`
   with the standard `tomllib` into frozen dataclasses. Omitted `[run]`
   and `[flags]` keys take their defaults; every category key is
@@ -245,7 +243,7 @@ Accepted items move here with an `A-<slug>` ID.
 - A-fixed-engine: no `[engine]` table; `run` and `setup` use clef-local.
 - A-run-events: `runner.run` yields `RunEvent`s for any reporter. It lists
   IDs first, so `RunStarted` has the total. Only a 404 fails one message;
-  other Gmail errors end the run. It refuses a non-local engine.
+  others end the run, transient ones after retries. Refuses non-local engines.
 - A-config-writer: `config.write_config` rewrites the file, no comments,
   via a temp file that must load back equal; it refuses changed values.
 - A-setup-prompter: `run_setup` asks through a `Prompter` (`ui/prompts.py`).
@@ -255,3 +253,5 @@ Accepted items move here with an `A-<slug>` ID.
 - A-run-log: only apply runs log (`runs.jsonl`, synced), then at most 1 modify.
 - A-label-resolver: once per run; creates ancestors first; exact-case (#19).
 - A-run-summary: `summary.SummaryTally` tallies; `ui/summary.py` renders.
+- A-long-runs: `runner.run` checks `stop.StopFlag` before each message, ends
+  a stop with `RunStopped`, and retries transient errors, yielding `Retrying`.

@@ -12,9 +12,11 @@ from inbox_sorter.types import (
     Decision,
     MessageDecided,
     MessageFailed,
+    Retrying,
     RunEvent,
     RunFinished,
     RunStarted,
+    RunStopped,
 )
 from inbox_sorter.ui.plain import unsafe_char
 
@@ -34,7 +36,7 @@ def planned_actions(decision: Decision) -> str:
 
 
 class TableReporter:
-    """Writes the header, one row per message, then the finish line."""
+    """Writes the header, one row per message, then the finish or stop line."""
 
     def __init__(self, out: TextIO) -> None:
         self.out = out
@@ -67,6 +69,21 @@ class TableReporter:
                 )
             case RunFinished():
                 self._write(f"Apply finished: {event.decided} changed, {event.failed} failed.")
+            case Retrying():
+                self._write(
+                    f"retrying in {round(event.delay)}s "
+                    f"(attempt {event.attempt} of {event.attempts}): {one_line(event.error)}"
+                )
+            case RunStopped() if self.dry_run:
+                self._write(
+                    f"Dry run stopped: {event.decided} planned, {event.failed} failed, "
+                    f"{event.remaining} not decided. Gmail was not changed."
+                )
+            case RunStopped():
+                self._write(
+                    f"Stopped: {event.decided} changed, {event.failed} failed, "
+                    f"{event.remaining} left. Run the same command again to resume."
+                )
 
     def _write(self, line: str) -> None:
         print(line, file=self.out, flush=True)

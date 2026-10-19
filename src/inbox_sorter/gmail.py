@@ -26,17 +26,22 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]  # R-oauth-modify-scop
 # Gmail search writes a nested label name with "/" as "-".
 UNPROCESSED_QUERY = "-label:" + PROCESSED_LABEL.replace("/", "-")
 MAX_PAGE_SIZE = 500  # the most messages.list returns per call
+# A 403 with one of these reasons is a rate limit, so worth retrying.
+RATE_LIMIT_REASONS = (b"rateLimitExceeded", b"userRateLimitExceeded")
 
 
 class MailboxError(UserError):
     """A Gmail sign-in, read or label change failed.
 
     ``status`` is the HTTP status when Gmail returned one, else None.
+    ``transient`` marks an error worth retrying: a rate limit, a 5xx or a
+    network failure.
     """
 
-    def __init__(self, message: str, status: int | None = None) -> None:
+    def __init__(self, message: str, status: int | None = None, transient: bool = False) -> None:
         super().__init__(message)
         self.status = status
+        self.transient = transient
 
 
 @dataclass(frozen=True)
@@ -200,6 +205,9 @@ def _html_text(markup: str) -> str:
 def _gmail_errors(token_path: Path | None = None) -> Iterator[None]:
     """Turn Google and network errors into MailboxError, keeping the HTTP status.
 
+    Rate limits, 5xx and network errors are marked transient; the runner
+    retries those, so no call here sets ``num_retries``.
+
     The Gmail client refreshes an expired access token inside any call, so
     sign-in errors can surface here as well as HTTP and network ones.
     """
@@ -211,8 +219,13 @@ def _gmail_errors(token_path: Path | None = None) -> Iterator[None]:
         yield
     except HttpError as error:
         status = int(error.resp.status)
+        rate_limited = status == 403 and any(
+            reason in (error.content or b"") for reason in RATE_LIMIT_REASONS
+        )
         raise MailboxError(
-            f"Gmail request failed ({status}): {error.reason}", status=status
+            f"Gmail request failed ({status}): {error.reason}",
+            status=status,
+            transient=status == 429 or status >= 500 or rate_limited,
         ) from error
     except RefreshError as error:
         token = token_path or "token.json in the state directory"
@@ -221,7 +234,9 @@ def _gmail_errors(token_path: Path | None = None) -> Iterator[None]:
             "and run again to sign in"
         ) from error
     except (OSError, http.client.HTTPException, httplib2.HttpLib2Error, TransportError) as error:
-        raise MailboxError(f"could not reach Gmail: {error_reason(error)}") from error
+        raise MailboxError(
+            f"could not reach Gmail: {error_reason(error)}", transient=True
+        ) from error
 
 
 def _write_private(path: Path, text: str) -> None:

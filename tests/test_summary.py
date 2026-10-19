@@ -8,8 +8,10 @@ from inbox_sorter.types import (
     Decision,
     MessageDecided,
     MessageFailed,
+    Retrying,
     RunFinished,
     RunStarted,
+    RunStopped,
 )
 from tests.factories import ALERTS, RECEIPTS, make_config, make_email
 
@@ -91,3 +93,15 @@ def test_summary_before_the_run_starts_is_an_error():
         tally.summary()
     tally(RunStarted("r1", dry_run=True, engine="fake", total=0))
     assert tally.started
+
+
+def test_a_stopped_run_ends_the_clock_and_a_retry_changes_no_count():
+    tally = SummaryTally(CONFIG, Clock(10.0, 14.0, 99.0))
+    tally(RunStarted("r1", dry_run=False, engine="fake", total=3))
+    tally(decided("m1", "receipts", ("Receipts",)))
+    tally(Retrying("m2", 1, 10, 1.0, "Gmail request failed (503): busy"))
+    tally(RunStopped("r1", decided=1, failed=0, remaining=2))
+
+    assert tally.summary().elapsed == 4.0
+    assert tally.summary().elapsed == 4.0  # the clock stopped; 99.0 is never read
+    assert (tally.summary().decided, tally.summary().failed) == (1, 0)

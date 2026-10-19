@@ -19,8 +19,11 @@ from inbox_sorter.questions import build_questions
 from inbox_sorter.runlog import RUN_LOG_NAME, RunLog, read_log
 # Not `from inbox_sorter import setup`: the setup command below would shadow it.
 from inbox_sorter.setup import SetupCancelled, check_accuracy, run_setup, sample_ids
+from inbox_sorter.stop import StopFlag, listen_for_stop, write_stderr
 from inbox_sorter.storage import state_dir
-from inbox_sorter.summary import SummaryTally
+from inbox_sorter.summary import RunSummary, SummaryTally
+from inbox_sorter.system import keep_awake, notify
+from inbox_sorter.types import RunStopped
 from inbox_sorter.ui.accuracy import (
     ACCURACY_STOPPED,
     CONFIG_KEPT,
@@ -31,7 +34,7 @@ from inbox_sorter.ui.accuracy import (
 from inbox_sorter.ui.plain import PlainReporter
 from inbox_sorter.ui.progress import CountProgress
 from inbox_sorter.ui.prompts import CANCELLED, LinePrompter, MenuPrompter
-from inbox_sorter.ui.summary import print_summary, summary_records
+from inbox_sorter.ui.summary import notification_text, print_summary, summary_records
 from inbox_sorter.ui.table import TableReporter, one_line
 from inbox_sorter.ui.undo import (
     outcome_record,
@@ -46,6 +49,8 @@ from inbox_sorter.undo import UndoOutcome, UndoPlan, apply_undo, plan_undo
 
 # Plain-text help and errors; Rich is reserved for ui/ (the setup report and the run dashboard).
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False, rich_markup_mode=None)
+
+ABORTED = "run aborted; the message in flight was left unprocessed, and the next run sorts it"
 
 # Shared by every command that reads the config (A-config-location).
 ConfigOption = Annotated[
@@ -93,9 +98,22 @@ def run(
             "--apply", help="Change Gmail: log each decision, then apply it. Without it, a dry run."
         ),
     ] = False,
+    all_mail: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            help="Keep going until no unprocessed inbox mail is left, "
+            "instead of stopping at max_messages.",
+        ),
+    ] = False,
 ) -> None:
-    """Sort unprocessed inbox mail. A dry run unless --apply is given."""
+    """Sort unprocessed inbox mail. A dry run unless --apply is given.
+
+    q or Ctrl-C stops after the current message; a second Ctrl-C aborts.
+    """
     opts: CliOptions = ctx.obj
+    if all_mail and limit is not None:
+        raise typer.BadParameter("--all and --limit cannot be used together")
     path = resolve_config_path(config)
     cfg = load_config(path)
     try:
@@ -115,6 +133,7 @@ def run(
         else TableReporter(sys.stdout)
     )
     tally = SummaryTally(cfg)
+    flag = StopFlag()
     events = runner.run(
         mailbox,
         engine,
@@ -124,28 +143,43 @@ def run(
         run_id=runner.new_run_id(),
         apply=apply,
         log=RunLog(state / RUN_LOG_NAME) if apply else None,
+        all_mail=all_mail,
+        stop=flag,
     )
+    stopped = False
     try:
-        for event in events:
-            tally(event)
-            report(event)
-    except UserError:
+        # Only the loop: Ctrl-C during sign-in or the model load keeps its default.
+        with keep_awake(), listen_for_stop(flag, notice=write_stderr):
+            for event in events:
+                tally(event)
+                report(event)
+                stopped = isinstance(event, RunStopped)
+    except KeyboardInterrupt:  # the second Ctrl-C
+        if tally.started:
+            _print_summary(tally.summary(), opts)
+        raise UserError(ABORTED) from None
+    except UserError as error:
         # An apply run that fails midway has changed earlier messages; show
         # its run ID and totals before the error.
-        if tally.started:
-            _print_summary(tally, opts)
+        summary = tally.summary() if tally.started else None
+        if summary is not None:
+            _print_summary(summary, opts)
+        notify(notification_text(summary, str(error)))
         raise
     finally:
         engine.close()
-    _print_summary(tally, opts)
+    summary = tally.summary()
+    _print_summary(summary, opts)
+    if not stopped:  # whoever stopped the run is at the keyboard
+        notify(notification_text(summary, None))
 
 
-def _print_summary(tally: SummaryTally, opts: CliOptions) -> None:
+def _print_summary(summary: RunSummary, opts: CliOptions) -> None:
     if opts.plain:
-        for line in summary_records(tally.summary(), opts.json):
+        for line in summary_records(summary, opts.json):
             print(line, flush=True)
     else:
-        print_summary(tally.summary(), sys.stdout)
+        print_summary(summary, sys.stdout)
 
 
 @app.command()

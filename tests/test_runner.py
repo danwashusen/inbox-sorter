@@ -9,7 +9,16 @@ from inbox_sorter.gmail import PROCESSED_LABEL, LabelInfo, MailboxError
 from inbox_sorter.questions import build_questions
 from inbox_sorter.runlog import RunLog, RunLogError, read_log
 from inbox_sorter.runner import decide_message, new_run_id, run
-from inbox_sorter.types import MessageDecided, MessageFailed, RunFinished, RunStarted
+from inbox_sorter.stop import StopFlag
+from inbox_sorter.types import (
+    MessageDecided,
+    MessageFailed,
+    Retrying,
+    RunFinished,
+    RunStarted,
+    RunStopped,
+)
+from inbox_sorter.ui.plain import plain_line
 from inbox_sorter.undo import apply_undo, plan_undo
 from tests.factories import answers, make_config, make_email
 from tests.fake_mailbox import FakeMailbox
@@ -26,7 +35,10 @@ def unsure_then_sure(request):
     return answers(confidence=0.97 if "body" in request.state else 0.5, reply=0.9)
 
 
-def start(mailbox, engine=None, config=None, limit=None, log=None, run_id="r1"):
+def start(
+    mailbox, engine=None, config=None, limit=None, log=None, run_id="r1", all_mail=False,
+    stop=None, retry_delays=(0.0, 0.0),
+):  # fmt: skip
     config = config or make_config()
     return run(
         mailbox,
@@ -37,6 +49,9 @@ def start(mailbox, engine=None, config=None, limit=None, log=None, run_id="r1"):
         run_id=run_id,
         apply=log is not None,
         log=log,
+        all_mail=all_mail,
+        stop=stop,
+        retry_delays=retry_delays,
     )
 
 
@@ -152,8 +167,10 @@ def test_other_mailbox_errors_end_the_run():
         def get_message(self, message_id):
             raise MailboxError("boom", status=500)
 
+    events = []
     with pytest.raises(MailboxError, match="boom"):
-        list(start(BrokenMailbox([make_email()])))
+        events.extend(start(BrokenMailbox([make_email()])))
+    assert not any(isinstance(event, Retrying) for event in events)  # not marked transient
 
 
 def test_a_non_local_engine_is_refused_before_listing():
@@ -354,3 +371,244 @@ def test_decide_message_retries_a_low_confidence_answer_with_the_body():
     assert len(engine.requests) == 2
     assert email.body == "Your order has shipped"
     assert decision.used_body and decision.confidence == 0.97
+
+
+# Long runs: --all, stop and resume, retries
+
+
+TRANSIENT = MailboxError("Gmail request failed (503): busy", status=503, transient=True)
+
+
+class Flaky(FakeMailbox):
+    """Raises TRANSIENT from the named method the first ``times`` calls for each listed ID."""
+
+    def __init__(self, *args, method, ids=("m1",), times=1, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.method, self.ids, self.left = method, set(ids), {i: times for i in ids}
+
+    def _maybe_fail(self, method, message_id):
+        if method == self.method and message_id in self.ids and self.left[message_id] > 0:
+            self.left[message_id] -= 1
+            raise TRANSIENT
+
+    def get_message(self, message_id):
+        self._maybe_fail("get_message", message_id)
+        return super().get_message(message_id)
+
+    def modify(self, message_id, add_label_ids, remove_label_ids):
+        self._maybe_fail("modify", message_id)
+        super().modify(message_id, add_label_ids, remove_label_ids)
+
+
+def test_all_mail_lists_past_max_messages():
+    mailbox = PagedMailbox([make_email(f"m{n}") for n in range(5)])
+
+    events = list(start(mailbox, config=make_config(max_messages=2), all_mail=True))
+
+    assert events[0].total == 5
+    assert len(decisions(events)) == 5
+
+
+def test_an_id_repeated_across_pages_is_decided_once(tmp_path):
+    class Shifting(PagedMailbox):
+        """New mail arrived between pages, so page 2 repeats page 1's last ID."""
+
+        def list_unprocessed(self, page_token=None, page_size=100):
+            if page_token is None:
+                return ["m1", "m2"], "1"
+            return ["m2", "m3"], None
+
+    mailbox = Shifting([make_email(f"m{n}") for n in (1, 2, 3)], labels=[RECEIPTS, PROCESSED])
+    path = tmp_path / "runs.jsonl"
+
+    events = list(start(mailbox, log=RunLog(path), all_mail=True))
+
+    assert [d.message_id for d in decisions(events)] == ["m1", "m2", "m3"]
+    assert [line["id"] for line in log_lines(path)] == ["m1", "m2", "m3"]
+
+
+@pytest.mark.parametrize("limit, expected", [(None, ["m1", "m2"]), (2, ["m1", "m2"])])
+def test_an_id_repeated_within_a_page_is_decided_once(limit, expected):
+    class Repeating(FakeMailbox):
+        def list_unprocessed(self, page_token=None, page_size=100):
+            return ["m1", "m1", "m2"], None
+
+    events = list(start(Repeating([make_email("m1"), make_email("m2")]), limit=limit))
+
+    assert events[0].total == 2
+    assert [d.message_id for d in decisions(events)] == expected
+
+
+def test_all_mail_with_a_limit_is_a_programming_error():
+    with pytest.raises(ValueError, match="all_mail and limit"):
+        next(start(FakeMailbox([make_email()]), limit=3, all_mail=True))
+
+
+def test_a_stop_before_the_first_message_decides_nothing(tmp_path):
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")], labels=[RECEIPTS, PROCESSED])
+    path = tmp_path / "runs.jsonl"
+    flag = StopFlag()
+    events = start(mailbox, log=RunLog(path), stop=flag)
+
+    assert isinstance(next(events), RunStarted)
+    flag.request()
+    assert list(events) == [RunStopped("r1", decided=0, failed=0, remaining=2)]
+    assert log_lines(path) == [] and mailbox.modify_calls == []
+
+
+def test_stop_and_resume_handle_every_message_exactly_once(tmp_path):
+    flag = StopFlag()
+
+    def stop_on_m2(request):
+        if request.state["subject"] == "Order m2":
+            flag.request()
+        return answers()
+
+    mailbox = FakeMailbox([make_email(f"m{n}") for n in range(1, 6)], labels=[RECEIPTS])
+    path = tmp_path / "runs.jsonl"
+
+    first = list(start(mailbox, FakeEngine(stop_on_m2), log=RunLog(path), stop=flag))
+
+    assert first[-1] == RunStopped("r1", decided=2, failed=0, remaining=3)
+    processed = mailbox.label_ids()[PROCESSED_LABEL]
+    assert [processed in email.label_ids for email in mailbox.emails] == [True] * 2 + [False] * 3
+
+    second = list(start(mailbox, log=RunLog(path), run_id="r2", stop=StopFlag()))
+
+    assert second[0].total == 3  # only the remaining mail
+    assert [d.message_id for d in decisions(second)] == ["m3", "m4", "m5"]
+    assert second[-1] == RunFinished("r2", decided=3, failed=0)
+    assert [line["id"] for line in log_lines(path)] == ["m1", "m2", "m3", "m4", "m5"]
+    assert [call[0] for call in mailbox.modify_calls] == ["m1", "m2", "m3", "m4", "m5"]
+
+
+def test_a_stop_during_the_last_message_still_finishes_the_run():
+    flag = StopFlag()
+
+    def stop_now(request):
+        flag.request()
+        return answers()
+
+    events = list(start(FakeMailbox([make_email("m1")]), FakeEngine(stop_now), stop=flag))
+
+    assert events[-1] == RunFinished("r1", decided=1, failed=0)
+
+
+def test_an_abort_between_log_and_change_leaves_the_message_for_the_next_run(tmp_path):
+    class Interrupted(FakeMailbox):
+        def modify(self, message_id, add_label_ids, remove_label_ids):
+            if message_id == "m2" and self.interrupt:
+                raise KeyboardInterrupt
+            super().modify(message_id, add_label_ids, remove_label_ids)
+
+    mailbox = Interrupted([make_email("m1"), make_email("m2")], labels=[RECEIPTS, PROCESSED])
+    mailbox.interrupt = True
+    path = tmp_path / "runs.jsonl"
+
+    with pytest.raises(KeyboardInterrupt):
+        list(start(mailbox, log=RunLog(path)))
+
+    assert [line["id"] for line in log_lines(path)] == ["m1", "m2"]  # m2's line is an orphan
+    assert "Label_9" not in mailbox.emails[1].label_ids
+    mailbox.interrupt = False
+    assert [d.message_id for d in decisions(start(mailbox, log=RunLog(path), run_id="r2"))] == [
+        "m2"
+    ]
+    assert plan_undo(read_log(path), "r1").later_run == ("m2",)
+
+
+def test_a_transient_read_error_is_retried():
+    mailbox = Flaky([make_email("m1")], method="get_message")
+
+    events = list(start(mailbox))
+
+    assert events[1] == Retrying("m1", 1, 2, 0.0, str(TRANSIENT))
+    assert isinstance(events[2], MessageDecided) and events[2].email.id == "m1"
+    assert events[-1] == RunFinished("r1", decided=1, failed=0)
+
+
+def test_a_transient_change_is_retried_without_a_second_log_line(tmp_path):
+    mailbox = Flaky([make_email("m1")], method="modify", labels=[RECEIPTS, PROCESSED])
+    path = tmp_path / "runs.jsonl"
+
+    events = list(start(mailbox, log=RunLog(path)))
+
+    assert sum(isinstance(event, Retrying) for event in events) == 1
+    assert "Label_9" in mailbox.emails[0].label_ids
+    assert [line["id"] for line in log_lines(path)] == ["m1"]
+
+
+def test_a_transient_label_lookup_is_retried_before_the_line_is_logged(tmp_path):
+    class FlakyLabels(FakeMailbox):
+        failed = False
+
+        def label_ids(self):
+            if not self.failed:
+                self.failed = True
+                raise TRANSIENT
+            return super().label_ids()
+
+    mailbox = FlakyLabels([make_email("m1")], labels=[RECEIPTS, PROCESSED])
+    path = tmp_path / "runs.jsonl"
+
+    events = list(start(mailbox, log=RunLog(path)))
+
+    assert [type(event) for event in events] == [RunStarted, Retrying, MessageDecided, RunFinished]
+    assert [line["id"] for line in log_lines(path)] == ["m1"]
+
+
+def test_a_transient_listing_error_is_retried_before_the_run_starts():
+    class FlakyList(FakeMailbox):
+        failed = False
+
+        def list_unprocessed(self, page_token=None, page_size=100):
+            if not self.failed:
+                self.failed = True
+                raise TRANSIENT
+            return super().list_unprocessed(page_token, page_size)
+
+    events = list(start(FlakyList([make_email("m1")])))
+
+    assert events[0] == Retrying(None, 1, 2, 0.0, str(TRANSIENT))
+    assert events[1] == RunStarted("r1", dry_run=True, engine="fake", total=1)
+
+
+def test_retries_run_out_and_the_error_ends_the_run():
+    mailbox = Flaky([make_email("m1")], method="get_message", times=99)
+    events = []
+
+    with pytest.raises(MailboxError, match="busy"):
+        events.extend(start(mailbox))
+
+    assert [event for event in events if isinstance(event, Retrying)] == [
+        Retrying("m1", 1, 2, 0.0, str(TRANSIENT)),
+        Retrying("m1", 2, 2, 0.0, str(TRANSIENT)),
+    ]
+
+
+def test_a_stop_during_backoff_still_finishes_the_current_message(tmp_path):
+    mailbox = Flaky(
+        [make_email("m1"), make_email("m2")], method="get_message", labels=[RECEIPTS, PROCESSED]
+    )
+    path = tmp_path / "runs.jsonl"
+    flag = StopFlag()
+    events = []
+
+    for event in start(mailbox, log=RunLog(path), stop=flag):
+        events.append(event)
+        if isinstance(event, Retrying):
+            flag.request()
+
+    assert [d.message_id for d in decisions(events)] == ["m1"]
+    assert [line["id"] for line in log_lines(path)] == ["m1"]
+    assert [call[0] for call in mailbox.modify_calls] == ["m1"]
+    assert events[-1] == RunStopped("r1", decided=1, failed=0, remaining=1)
+
+
+def test_a_retry_delay_is_reported_in_seconds_as_a_float():
+    mailbox = Flaky([make_email("m1")], method="get_message")
+
+    retry = next(e for e in start(mailbox, retry_delays=(0,)) if isinstance(e, Retrying))
+
+    assert retry.delay == 0.0 and isinstance(retry.delay, float)
+    assert "delay=0.00" in plain_line(retry, False).split()

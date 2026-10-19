@@ -3,7 +3,14 @@ import json
 import shlex
 
 from inbox_sorter.triage import decide
-from inbox_sorter.types import MessageDecided, MessageFailed, RunFinished, RunStarted
+from inbox_sorter.types import (
+    MessageDecided,
+    MessageFailed,
+    Retrying,
+    RunFinished,
+    RunStarted,
+    RunStopped,
+)
 from inbox_sorter.ui.plain import PlainReporter, plain_line, progress_line
 from tests.factories import make_config, make_email, response
 
@@ -116,3 +123,42 @@ def test_logfmt_escapes_bidi_controls():
     assert plain_line(MessageDecided(email, DECIDED.decision), False).endswith(
         'subject="pay\\u202elap"'
     )
+
+
+RETRYING = Retrying("m3", attempt=2, attempts=10, delay=4.0, error="Gmail request failed (429): x")
+LISTING_RETRY = Retrying(None, attempt=1, attempts=10, delay=1.0, error="could not reach Gmail")
+STOPPED = RunStopped("20261018-140211", decided=1, failed=0, remaining=3)
+
+
+def test_retrying_and_stopped_records_as_logfmt():
+    assert plain_line(RETRYING, False) == (
+        'retrying id=m3 attempt=2 of=10 delay=4.00 error="Gmail request failed (429): x"'
+    )
+    assert plain_line(LISTING_RETRY, False) == (
+        'retrying id="" attempt=1 of=10 delay=1.00 error="could not reach Gmail"'
+    )
+    assert plain_line(STOPPED, False) == (
+        "stopped run=20261018-140211 decided=1 failed=0 remaining=3"
+    )
+
+
+def test_retrying_and_stopped_records_as_json_keep_the_key_order():
+    retrying = json.loads(plain_line(RETRYING, True))
+    listing = json.loads(plain_line(LISTING_RETRY, True))
+    stopped = json.loads(plain_line(STOPPED, True))
+
+    assert list(retrying) == ["event", "id", "attempt", "of", "delay", "error"]
+    assert (retrying["event"], retrying["delay"]) == ("retrying", 4.0)
+    assert listing["id"] is None
+    assert list(stopped) == ["event", "run", "decided", "failed", "remaining"]
+    assert stopped["remaining"] == 3
+
+
+def test_a_retry_is_not_counted_as_a_message():
+    out = io.StringIO()
+    report = PlainReporter(out, progress_every=1)
+
+    report(RunStarted("r1", dry_run=True, engine="fake", total=5))
+    report(RETRYING)
+
+    assert [line.split()[0] for line in out.getvalue().splitlines()] == ["started", "retrying"]
