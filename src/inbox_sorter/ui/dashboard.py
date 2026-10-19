@@ -183,13 +183,12 @@ class Dashboard:
             refresh_per_second=4,
         )
         self._live.start()  # in a terminal, swaps sys.stdout and sys.stderr for proxies
-        proxies = sys.stdout, sys.stderr
+        self._streams = streams, (sys.stdout, sys.stderr)
         try:
-            _reroute_logging(streams, proxies)
+            _reroute_logging(*self._streams)
         except BaseException:
-            self.__exit__()
+            self.__exit__()  # puts back any handler moved before the failure
             raise
-        self._streams = streams, proxies
         return self
 
     def __exit__(self, *exc: object) -> None:
