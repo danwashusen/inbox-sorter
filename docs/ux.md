@@ -79,7 +79,19 @@ reads in a monochrome terminal.
 
 The end-of-run summary shows totals per category and action, flag counts,
 low-confidence count, errors, elapsed time and the run ID for `undo`. It
-names the low-confidence label as the place to review.
+names the low-confidence label as the place to review. An error that ends
+the run prints after the summary.
+
+1. `Summary · APPLY · <n> decided · <n> failed · elapsed 4h 34m`.
+2. One bar per category with mail, such as
+   `receipts █████ 1,544  1,544 labelled, 1,500 archived`. Labelled counts
+   mail that has the category label after the run. A dry run says
+   `to label`, `to archive` and `to mark read`.
+3. `⚑ Needs reply <n>   ⏰ Today <n>   ? Low confidence <n>`.
+4. `Review low-confidence mail under Sorter/_low-confidence in Gmail.` A
+   dry run says an apply run would add that label.
+5. `Run <id> · undo with: inbox-sorter undo <id>`, or `dry run, nothing
+   to undo`.
 
 ## Plain mode
 
@@ -91,13 +103,18 @@ The shared options go before the command: `inbox-sorter --plain run`.
 Each line is a logfmt record: its name, then `key=value` pairs in a fixed
 order.
 
-- `started run=<run-id> mode=dry-run engine=<engine> total=<n>`
+- `started run=<run-id> mode=<dry-run|apply> engine=<engine> total=<n>`
 - `decided id=<message-id> category=<id> confidence=<0.00> reply=<bool>
   today=<bool> low=<bool> body=<bool> add=<labels> remove=<labels>
   sender=<sender> subject=<subject>`, on one line
 - `failed id=<message-id> error=<text>`
 - `progress done=<n> total=<n>`, after every 10th message except the last
 - `finished run=<run-id> decided=<n> failed=<n>`
+- `total category=<id> label=<label> messages=<n> labelled=<n>
+  archived=<n> read=<n>`, one per category with mail
+- `summary run=<run-id> mode=<dry-run|apply> decided=<n> failed=<n>
+  reply=<n> today=<n> low=<n> elapsed=<seconds>
+  review=Sorter/_low-confidence`, last
 
 A value is double-quoted when it is empty or holds a space, `"`, `=`, `\`
 or a control character. Inside quotes `\`, `"`, a newline and a tab are
