@@ -6,10 +6,10 @@ run before the next message, and transient Gmail errors are retried with
 backoff, each wait announced by a Retrying event (A-long-runs).
 """
 
-import time
 from collections.abc import Callable, Generator, Iterator, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
+from time import sleep
 
 from inbox_sorter.config import Config
 from inbox_sorter.engine import DecisionEngine, DecisionRequest, Question
@@ -167,7 +167,7 @@ def _retrying[T](
             if not error.transient:
                 raise
             yield Retrying(message_id, attempt, len(delays), float(delay), str(error))
-            time.sleep(delay)
+            sleep(delay)
     return call()
 
 

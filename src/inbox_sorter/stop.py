@@ -12,7 +12,7 @@ import termios
 import threading
 import tty
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from types import FrameType
 
 READER_NAME = "inbox-sorter-stop-keys"
@@ -69,12 +69,15 @@ def interrupt_handler(
 def read_keys(
     fd: int, flag: StopFlag, notice: Callable[[str], None], done: threading.Event
 ) -> None:
-    """Request the stop on `q` or `Q`, until ``done`` is set or the input ends."""
+    """Request the stop on `q` or `Q`, until ``done`` is set, input ends or the terminal fails."""
     while not done.is_set():
-        ready, _, _ = select.select([fd], [], [], 0.2)
-        if not ready:
+        try:
+            ready, _, _ = select.select([fd], [], [], 0.2)
+            key = os.read(fd, 1) if ready else None
+        except OSError:  # the terminal hung up or stdin closed: q is off, Ctrl-C still works
+            return
+        if key is None:
             continue
-        key = os.read(fd, 1)
         if not key:  # end of input
             return
         if key in (b"q", b"Q") and flag.request():
@@ -87,6 +90,8 @@ def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr
 
     A run in the background gets Ctrl-C handling only: changing or reading
     the terminal from a background process group would stop the process.
+    Terminal access is best-effort: a terminal that hangs up loses the `q`
+    listener, never the run's outcome.
     """
     previous = signal.signal(signal.SIGINT, interrupt_handler(flag, notice))
     fd = sys.stdin.fileno() if _foreground_terminal() else None
@@ -95,17 +100,22 @@ def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr
     reader: threading.Thread | None = None
     try:
         if fd is not None:
-            saved = termios.tcgetattr(fd)
-            tty.setcbreak(fd)  # ISIG stays on, so Ctrl-C still sends SIGINT
-            reader = threading.Thread(
-                target=read_keys, args=(fd, flag, notice, done), name=READER_NAME, daemon=True
-            )
-            reader.start()
+            try:
+                saved = termios.tcgetattr(fd)
+                tty.setcbreak(fd)  # ISIG stays on, so Ctrl-C still sends SIGINT
+            except termios.error:  # terminal gone; Ctrl-C still works
+                saved = None
+            else:
+                reader = threading.Thread(
+                    target=read_keys, args=(fd, flag, notice, done), name=READER_NAME, daemon=True
+                )
+                reader.start()
         yield
     finally:
         signal.signal(signal.SIGINT, previous)
         if fd is not None and saved is not None:
-            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+            with suppress(termios.error):  # a hung-up terminal has nothing to restore
+                termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         done.set()
         if reader is not None:
             reader.join()

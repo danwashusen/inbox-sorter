@@ -1,3 +1,4 @@
+import errno
 import os
 import pty
 import signal
@@ -128,3 +129,54 @@ def test_a_failed_notice_write_is_ignored(monkeypatch):
     interrupt_handler(flag, stop.write_stderr)(signal.SIGINT, None)  # does not raise
 
     assert flag.requested
+
+
+def raise_eio(*args):
+    raise OSError(errno.EIO, "Input/output error")
+
+
+@pytest.mark.parametrize("failing", ["read", "select"])
+def test_read_keys_ends_quietly_when_the_terminal_fails(monkeypatch, failing):
+    read_fd, write_fd = os.pipe()
+    os.write(write_fd, b"q")
+    target = stop.os if failing == "read" else stop.select
+    monkeypatch.setattr(target, failing, raise_eio)
+    flag, notices = StopFlag(), []
+
+    read_keys(read_fd, flag, notices.append, threading.Event())  # returns, does not raise
+
+    os.close(read_fd)
+    os.close(write_fd)
+    assert not flag.requested and notices == []
+
+
+def test_a_terminal_that_hangs_up_mid_run_keeps_the_run_outcome(terminal, monkeypatch):
+    monkeypatch.setattr(stop.os, "tcgetpgrp", lambda fd: os.getpgrp())
+    before = signal.getsignal(signal.SIGINT)
+
+    def hung_up(*args):
+        raise termios.error(errno.EIO, "Input/output error")
+
+    with pytest.raises(RuntimeError, match="the run failed"), listen_for_stop(StopFlag(), print):
+        assert len(reader_threads()) == 1
+        monkeypatch.setattr(stop.termios, "tcsetattr", hung_up)
+        raise RuntimeError("the run failed")
+
+    assert signal.getsignal(signal.SIGINT) is before
+    assert reader_threads() == []
+
+
+def test_a_terminal_gone_before_the_run_starts_leaves_only_ctrl_c(terminal, monkeypatch):
+    monkeypatch.setattr(stop.os, "tcgetpgrp", lambda fd: os.getpgrp())
+
+    def hung_up(*args):
+        raise termios.error(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(stop.termios, "tcgetattr", hung_up)
+    before = signal.getsignal(signal.SIGINT)
+
+    with listen_for_stop(StopFlag(), print):
+        assert reader_threads() == []
+        assert signal.getsignal(signal.SIGINT) is not before
+
+    assert signal.getsignal(signal.SIGINT) is before

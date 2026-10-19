@@ -35,7 +35,7 @@ def system_calls(monkeypatch):
     write_stderr uses os.write(2, …), which CliRunner's captured stderr would miss.
     """
     calls = {"notify": [], "stderr": []}
-    monkeypatch.setattr(cli.runner.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(cli.runner, "sleep", lambda seconds: None)
     monkeypatch.setattr(cli, "keep_awake", contextlib.nullcontext)
     monkeypatch.setattr(cli, "notify", calls["notify"].append)
     monkeypatch.setattr(cli, "write_stderr", calls["stderr"].append)
@@ -67,11 +67,15 @@ def test_plain_stdout_holds_only_records_even_when_sign_in_prints(tmp_path, monk
     assert not (tmp_path / "runs.jsonl").exists()
 
 
-def apply_args(tmp_path, monkeypatch, mailbox):
-    """Fake sign-in and the model load, write CONFIG, and return the apply run's arguments."""
-    config = setup_cli(tmp_path, monkeypatch, mailbox, FakeEngine(lambda request: answers()))
+def run_args(tmp_path, monkeypatch, mailbox, engine=None):
+    """Fake sign-in and the model load, write CONFIG, and return a dry run's arguments."""
+    config = setup_cli(tmp_path, monkeypatch, mailbox, engine or FakeEngine(lambda r: answers()))
     config.write_text(CONFIG)
-    return ["--json", "run", "--apply", "--config", str(config)]
+    return ["--json", "run", "--config", str(config)]
+
+
+def apply_args(tmp_path, monkeypatch, mailbox):
+    return [*run_args(tmp_path, monkeypatch, mailbox), "--apply"]
 
 
 def apply_cli(tmp_path, monkeypatch, mailbox):
@@ -627,15 +631,9 @@ def interrupting_engine(times):
     return FakeEngine(decide)
 
 
-def long_run_args(tmp_path, monkeypatch, mailbox, engine=None):
-    config = setup_cli(tmp_path, monkeypatch, mailbox, engine or FakeEngine(lambda r: answers()))
-    config.write_text(CONFIG)
-    return ["--json", "run", "--config", str(config)]
-
-
 def test_all_with_a_limit_is_a_usage_error_before_sign_in(tmp_path, monkeypatch):
     mailbox = FakeMailbox([make_email("m1")])
-    args = long_run_args(tmp_path, monkeypatch, mailbox)
+    args = run_args(tmp_path, monkeypatch, mailbox)
     connects = []
     monkeypatch.setattr(cli.GmailMailbox, "connect", staticmethod(connects.append))
 
@@ -648,7 +646,7 @@ def test_all_with_a_limit_is_a_usage_error_before_sign_in(tmp_path, monkeypatch)
 
 def test_all_runs_past_max_messages(tmp_path, monkeypatch):
     mailbox = FakeMailbox([make_email(f"m{n}") for n in range(3)])
-    args = long_run_args(tmp_path, monkeypatch, mailbox)
+    args = run_args(tmp_path, monkeypatch, mailbox)
     config = tmp_path / "inbox-sorter.toml"
     config.write_text("[run]\nmax_messages = 1\n" + CONFIG)
 
@@ -662,7 +660,7 @@ def test_one_ctrl_c_finishes_the_message_prints_the_summary_and_exits_0(
     tmp_path, monkeypatch, system_calls
 ):
     mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
-    args = long_run_args(tmp_path, monkeypatch, mailbox, interrupting_engine(1))
+    args = run_args(tmp_path, monkeypatch, mailbox, interrupting_engine(1))
     before = signal.getsignal(signal.SIGINT)
 
     result = CliRunner().invoke(cli.app, args)
@@ -680,7 +678,7 @@ def test_a_second_ctrl_c_aborts_after_the_summary_and_exits_1(
     tmp_path, monkeypatch, capsys, system_calls
 ):
     mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
-    args = long_run_args(tmp_path, monkeypatch, mailbox, interrupting_engine(2))
+    args = run_args(tmp_path, monkeypatch, mailbox, interrupting_engine(2))
     monkeypatch.setattr(cli.sys, "argv", ["inbox-sorter", *args, "--apply"])
     before = signal.getsignal(signal.SIGINT)
 
