@@ -91,6 +91,18 @@ def test_main_prints_the_summary_then_the_error_and_exits_1(tmp_path, monkeypatc
     assert "error: modify failed for 'm2'" in err
 
 
+def test_an_error_before_the_run_starts_prints_no_summary(tmp_path, monkeypatch):
+    class Unlistable(FakeMailbox):
+        def list_unprocessed(self, page_token=None, page_size=100):
+            raise MailboxError("Gmail request failed (500): boom", status=500)
+
+    result = apply_cli(tmp_path, monkeypatch, Unlistable([make_email("m1")]))
+
+    assert result.exit_code == 1
+    assert str(result.exception) == "Gmail request failed (500): boom"
+    assert result.stdout == ""
+
+
 def test_a_fatal_error_mid_apply_still_prints_the_summary(tmp_path, monkeypatch):
     mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
     mailbox.fail_modify = {"m2"}

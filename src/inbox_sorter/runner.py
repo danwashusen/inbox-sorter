@@ -86,7 +86,7 @@ def _apply(
     resolver: LabelResolver,
     log: RunLog,
     run_id: str,
-    engine: str,
+    engine_name: str,
     email: Email,
     decision: Decision,
 ) -> None:
@@ -100,7 +100,7 @@ def _apply(
     added = {
         name: label_id for name, label_id in resolved.items() if label_id not in email.label_ids
     }
-    log.append(run_id, engine, decision, added)
+    log.append(run_id, engine_name, decision, added)
     if added or decision.remove_labels:  # Gmail refuses a change with nothing in it
         mailbox.modify(decision.message_id, tuple(added.values()), decision.remove_labels)
 
