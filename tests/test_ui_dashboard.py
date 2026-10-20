@@ -107,7 +107,7 @@ def test_dashboard_prints_the_table_rows_and_renders_the_panel():
         MessageFailed("m3", "no message 'm3'"),
         RunFinished("r1", decided=2, failed=1),
     ]
-    expected = TableReporter(io.StringIO())
+    expected = TableReporter()
     rows = []
 
     with Dashboard(tally, out, device="mps", clock=clock, now=lambda: AT) as dashboard:

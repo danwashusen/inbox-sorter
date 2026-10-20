@@ -72,8 +72,8 @@ reads in a monochrome terminal.
 - `q` finishes the current message, prints the summary and exits 0.
 - The first Ctrl-C behaves like `q`. A second Ctrl-C aborts at once, prints
   the summary and exits 1; the message in flight is left for the next run.
-- Transient Gmail errors, such as rate limits, retry with backoff, shown in
-  the panel or a `retrying` record. A run stops only on errors it cannot retry.
+- Transient errors retry with backoff, shown in the panel or `retrying` records.
+  A run stops on an error it can't retry, or when 10 retries fail (about 5 min).
 
 ## Summary
 
@@ -210,10 +210,10 @@ Each requirement has a stable slug ID, as in the product requirements.
   ETA and finish clock time, using a moving-average rate.
 - R-decision-feed: The panel shows the most recent decisions with sender,
   subject, category, confidence and flags.
-- R-run-all: `run --all` processes all unprocessed inbox mail; without it a
-  run stops at `max_messages`.
-- R-resumable: A stopped or crashed run resumes from where it left off with
-  no message handled twice.
+- R-run-all: `run --all` processes the unprocessed inbox mail listed at its
+  start; without it a run stops at `max_messages`.
+- R-resumable: A stopped or crashed `--apply` run resumes where it left off,
+  with no message handled twice; a dry run starts over.
 - R-graceful-stop: `q` or one Ctrl-C stops after the current message; two
   Ctrl-C presses abort.
 - R-retry-transient: Rate limits and network errors retry with backoff and

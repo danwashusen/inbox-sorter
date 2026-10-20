@@ -5,7 +5,6 @@ body is ever printed.
 """
 
 import unicodedata
-from typing import TextIO
 
 from inbox_sorter.gmail import PROCESSED_LABEL
 from inbox_sorter.types import (
@@ -38,17 +37,11 @@ def planned_actions(decision: Decision) -> str:
 class TableReporter:
     """The header, one row per message, then the finish or stop line.
 
-    Called, it writes them to ``out``; ``lines()`` returns them unwritten,
-    which is how the dashboard prints them above its panel.
+    ``lines()`` returns them; the dashboard prints them above its panel.
     """
 
-    def __init__(self, out: TextIO) -> None:
-        self.out = out
+    def __init__(self) -> None:
         self.dry_run = True
-
-    def __call__(self, event: RunEvent) -> None:
-        for line in self.lines(event):
-            print(line, file=self.out, flush=True)
 
     def lines(self, event: RunEvent) -> list[str]:
         """The lines ``event`` writes; the dashboard prints them above its panel."""

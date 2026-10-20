@@ -7,6 +7,7 @@ decision model running on Apple Silicon (MPS).
 
 - `uv run pytest`: run the unit tests (fast; no model load).
 - `uv run pytest -m model`: run the slow tests that load clef.
+- `uv run pytest -m gmail`: run the tests that read your real Gmail inbox.
 - `uv run python smoke_clef.py`: load clef and classify sample emails.
 - `mise exec -- mdsmith check .`: lint all Markdown; `fix` auto-fixes.
 
@@ -48,7 +49,7 @@ row: "- [{summary}]({filename})"
 ## Running this stack with Claude Code
 
 - Anything that loads clef (`uv run python smoke_clef.py`, model-backed
-  tests, later `inbox-sorter run`) takes about 20 s and 51 GB of memory.
+  tests, `inbox-sorter run` and `setup`) takes about 20 s and 51 GB of memory.
   Run it in the background, log it, then read the tail:
   `uv run python smoke_clef.py > /tmp/inbox-sorter-clef.log 2>&1`. Run
   one model-loading command at a time.

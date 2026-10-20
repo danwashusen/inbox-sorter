@@ -165,7 +165,7 @@ class Dashboard:
         self._started: RunStarted | None = None
         self._feed: deque[str] = deque(maxlen=FEED_SIZE)
         self._retry: tuple[Retrying, float] | None = None  # the event and when its wait ends
-        self._table = TableReporter(out)  # only for its lines; never writes
+        self._table = TableReporter()
         self._console = Console(file=out, highlight=False)
         self._live: Live | None = None
         self._streams: tuple[tuple[object, ...], tuple[object, ...]] | None = None
