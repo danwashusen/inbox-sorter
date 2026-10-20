@@ -19,6 +19,11 @@ from inbox_sorter.ui.table import one_line
 APPLIED = ("labelled", "archived", "read")
 PLANNED = ("to label", "to archive", "to mark read")
 
+# Flag icons, shared by the flag line and the dashboard feed.
+NEEDS_REPLY_ICON = "⚑"
+TODAY_ICON = "⏰"
+LOW_CONFIDENCE_ICON = "?"
+
 
 def format_elapsed(seconds: float) -> str:
     """Such as "59s", "1m 01s" or "4h 34m"."""
@@ -63,8 +68,9 @@ def summary_bars(summary: RunSummary) -> list[Bar]:
 def summary_lines(summary: RunSummary) -> tuple[str, str, str]:
     """The flag counts, where to review, and the run ID with how to undo it."""
     flags = (
-        f"⚑ Needs reply {summary.needs_reply:,}   ⏰ Today {summary.today:,}   "
-        f"? Low confidence {summary.low_confidence:,}"
+        f"{NEEDS_REPLY_ICON} Needs reply {summary.needs_reply:,}   "
+        f"{TODAY_ICON} Today {summary.today:,}   "
+        f"{LOW_CONFIDENCE_ICON} Low confidence {summary.low_confidence:,}"
     )
     if summary.dry_run:
         review = f"An apply run labels low-confidence mail {LOW_CONFIDENCE_LABEL} for review."

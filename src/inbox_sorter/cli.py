@@ -2,7 +2,7 @@
 
 import os
 import sys
-from contextlib import redirect_stdout
+from contextlib import nullcontext, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -31,11 +31,12 @@ from inbox_sorter.ui.accuracy import (
     accuracy_records,
     print_accuracy,
 )
+from inbox_sorter.ui.dashboard import Dashboard
 from inbox_sorter.ui.plain import PlainReporter
 from inbox_sorter.ui.progress import CountProgress
 from inbox_sorter.ui.prompts import CANCELLED, LinePrompter, MenuPrompter
 from inbox_sorter.ui.summary import notification_text, print_summary, summary_records
-from inbox_sorter.ui.table import TableReporter, one_line
+from inbox_sorter.ui.table import one_line
 from inbox_sorter.ui.undo import (
     outcome_record,
     skipped_records,
@@ -127,12 +128,16 @@ def run(
         mailbox = GmailMailbox.connect(state)
         engine = _load_engine()
 
-    report = (
-        PlainReporter(sys.stdout, json_lines=opts.json)
-        if opts.plain
-        else TableReporter(sys.stdout)
-    )
     tally = SummaryTally(cfg)
+    dashboard = None
+    if opts.plain:
+        report = PlainReporter(sys.stdout, json_lines=opts.json)
+        view, notice = nullcontext(), write_stderr
+    else:
+        # The device is for the title only; decisions still go through the engine seam.
+        dashboard = Dashboard(tally, sys.stdout, device=getattr(engine, "device", None))
+        report, view = dashboard, dashboard
+        notice = dashboard.notice  # the stop notice shows in the panel, not on stderr
     flag = StopFlag()
     events = runner.run(
         mailbox,
@@ -149,7 +154,10 @@ def run(
     stopped = False
     try:
         # Only the loop: Ctrl-C during sign-in or the model load keeps its default.
-        with keep_awake(), listen_for_stop(flag, notice=write_stderr):
+        # The panel is innermost, so it is gone before any summary prints.
+        with keep_awake(), listen_for_stop(flag, notice=notice) as q_key, view:
+            if dashboard is not None:  # set before the first refresh draws the footer
+                dashboard.q_key = q_key
             for event in events:
                 tally(event)
                 report(event)

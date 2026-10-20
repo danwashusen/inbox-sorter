@@ -21,9 +21,9 @@ Status: draft, v1 scope. Product scope lives in the
 
 ## Run dashboard
 
-`inbox-sorter run` draws an inline live panel that redraws in place. When
-the run ends, the panel is replaced by a summary and the scrollback stays
-intact.
+`inbox-sorter run` writes each decision's table row into the scrollback,
+and below the rows an inline live panel redraws in place. At the end the
+summary replaces only the panel, so the scrollback stays intact.
 
 ```text
 ╭─ inbox-sorter · APPLY · clef on MPS ──────────────────────╮
@@ -44,12 +44,12 @@ intact.
 
 The panel has three parts:
 
-- Header: mode (DRY RUN or APPLY in a contrasting colour), model and device,
-  progress bar, count, rate, elapsed time, ETA and finish clock time.
+- Header: mode (DRY RUN or APPLY in colour), model, device, progress bar,
+  count, rate, elapsed time, ETA, finish clock time and any pending retry.
 - Categories: one bar per category with its count and the action applied,
   then the flag and low-confidence counters.
 - Feed: the last few decisions with time, sender, subject, category,
-  confidence and flag icons.
+  confidence and flag icons. The footer shows the keys, or the stop notice.
 
 Colours carry meaning only alongside text or icons, so the panel still
 reads in a monochrome terminal.
@@ -241,7 +241,7 @@ Each requirement has a stable slug ID, as in the product requirements.
 Settled on 2026-10-18.
 
 - **Display.** An inline live panel, not a full-screen app, so scrollback
-  survives (R-live-dashboard).
+  survives (R-live-dashboard); table rows go above it (owner, 2026-10-19).
 - **Backlog.** One resumable `run --all` rather than repeated capped runs
   (R-run-all, R-resumable).
 - **Review.** Dry run on a sample with `--limit`, then apply; no saved plan

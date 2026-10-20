@@ -1,4 +1,4 @@
-"""The terminal run table: one row per decision, streamed as it arrives.
+"""The terminal run table: one row per decision, printed above the dashboard's panel.
 
 Plain text, readable in a monochrome terminal (R-monochrome-safe). No email
 body is ever printed.
@@ -27,7 +27,7 @@ GAP = "  "
 
 def planned_actions(decision: Decision) -> str:
     """Such as "+Receipts, archive, mark read"; Sorter/_processed is left out."""
-    actions = [f"+{label}" for label in decision.add_labels if label != PROCESSED_LABEL]
+    actions = [f"+{one_line(label)}" for label in decision.add_labels if label != PROCESSED_LABEL]
     if "INBOX" in decision.remove_labels:
         actions.append("archive")
     if "UNREAD" in decision.remove_labels:
@@ -36,22 +36,31 @@ def planned_actions(decision: Decision) -> str:
 
 
 class TableReporter:
-    """Writes the header, one row per message, then the finish or stop line."""
+    """The header, one row per message, then the finish or stop line.
+
+    Called, it writes them to ``out``; ``lines()`` returns them unwritten,
+    which is how the dashboard prints them above its panel.
+    """
 
     def __init__(self, out: TextIO) -> None:
         self.out = out
         self.dry_run = True
 
     def __call__(self, event: RunEvent) -> None:
+        for line in self.lines(event):
+            print(line, file=self.out, flush=True)
+
+    def lines(self, event: RunEvent) -> list[str]:
+        """The lines ``event`` writes; the dashboard prints them above its panel."""
         match event:
             case RunStarted():
                 self.dry_run = event.dry_run
                 mode = "DRY RUN" if event.dry_run else "APPLY"
-                self._write(
-                    f"{mode} · {event.engine} · {event.total} messages · run {event.run_id}"
-                )
                 actions = "Planned actions" if event.dry_run else "Actions"
-                self._write(_row([title for title, _ in COLUMNS], actions))
+                return [
+                    f"{mode} · {event.engine} · {event.total} messages · run {event.run_id}",
+                    _row([title for title, _ in COLUMNS], actions),
+                ]
             case MessageDecided(email=email, decision=decision):
                 cells = [
                     email.sender,
@@ -59,34 +68,32 @@ class TableReporter:
                     decision.category,
                     f"{round(decision.confidence * 100)}%",
                 ]
-                self._write(_row(cells, planned_actions(decision)))
+                return [_row(cells, planned_actions(decision))]
             case MessageFailed():
-                self._write(f"{event.message_id}{GAP}failed: {one_line(event.error)}")
+                return [f"{one_line(event.message_id)}{GAP}failed: {one_line(event.error)}"]
             case RunFinished() if self.dry_run:
-                self._write(
+                return [
                     f"Dry run finished: {event.decided} planned, {event.failed} failed. "
                     "Gmail was not changed."
-                )
+                ]
             case RunFinished():
-                self._write(f"Apply finished: {event.decided} changed, {event.failed} failed.")
+                return [f"Apply finished: {event.decided} changed, {event.failed} failed."]
             case Retrying():
-                self._write(
+                return [
                     f"retrying in {round(event.delay)}s "
                     f"(attempt {event.attempt} of {event.attempts}): {one_line(event.error)}"
-                )
+                ]
             case RunStopped() if self.dry_run:
-                self._write(
+                return [
                     f"Dry run stopped: {event.decided} planned, {event.failed} failed, "
                     f"{event.remaining} not decided. Gmail was not changed."
-                )
+                ]
             case RunStopped():
-                self._write(
+                return [
                     f"Stopped: {event.decided} changed, {event.failed} failed, "
                     f"{event.remaining} left. Run the same command again to resume."
-                )
-
-    def _write(self, line: str) -> None:
-        print(line, file=self.out, flush=True)
+                ]
+        return []
 
 
 def _row(cells: list[str], rest: str) -> str:

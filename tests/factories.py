@@ -57,3 +57,13 @@ def answers(
 
 def response(**kwargs) -> DecisionResponse:
     return DecisionResponse(engine="fake", answers=answers(**kwargs))
+
+
+class FakeClock:
+    """A monotonic clock the test moves by setting ``now``."""
+
+    def __init__(self, now: float = 100.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now

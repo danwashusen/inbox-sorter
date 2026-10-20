@@ -87,7 +87,7 @@ def read_keys(
 
 
 @contextmanager
-def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr) -> Iterator[None]:
+def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr) -> Iterator[bool]:
     """Handle Ctrl-C, and `q` too when stdin is this process's foreground terminal.
 
     A run in the background gets Ctrl-C handling only: changing or reading
@@ -95,6 +95,7 @@ def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr
     Terminal access is best-effort: a terminal that hangs up loses the `q`
     listener, never the run's outcome. The reader reads its own non-blocking
     descriptor of the terminal, so it can never block the run's exit.
+    Yields True when `q` is listened for, so the dashboard shows only keys that work.
     """
     fd = _foreground_fd()
     saved = None
@@ -124,7 +125,7 @@ def listen_for_stop(flag: StopFlag, notice: Callable[[str], None] = write_stderr
                     daemon=True,
                 )
                 reader.start()
-        yield
+        yield reader is not None
     finally:
         signal.signal(signal.SIGINT, previous)
         if saved is not None:
