@@ -13,8 +13,8 @@ Status: draft, v1 scope. Product scope lives in the
 ## Goals
 
 - Glanceable: one look shows progress, ETA and what the sorter is doing.
-- Safe to leave: a backlog of 10,000+ unread emails runs overnight
-  unattended.
+- Safe to leave: a backlog of 10,000+ unread emails runs unattended,
+  resuming across nights.
 - Safe to stop: stopping at any point loses no work and leaves no message
   half-handled.
 - Pretty: a dashboard worth leaving open, without hiding scrollback.
@@ -72,8 +72,8 @@ reads in a monochrome terminal.
 - `q` finishes the current message, prints the summary and exits 0.
 - The first Ctrl-C behaves like `q`. A second Ctrl-C aborts at once, prints
   the summary and exits 1; the message in flight is left for the next run.
-- Transient Gmail errors, such as rate limits, retry with backoff, shown in
-  the panel or a `retrying` record. A run stops only on errors it cannot retry.
+- Transient Gmail errors retry with backoff, shown in the panel or plain mode.
+  A run stops on an error it can't retry, or when 10 retries fail (about 5 min).
 
 ## Summary
 
@@ -198,7 +198,7 @@ The intended path to a large `--apply` run:
 1. `run --limit 200` (dry run is the default) and read the decisions.
 2. Tune category descriptions in the config until the sample looks right.
 3. `run --apply --limit 200`, then spot-check Gmail.
-4. `run --apply --all` for the backlog, left to run overnight.
+4. `run --apply --all` for the backlog, run unattended over a few nights.
 
 ## Requirements
 
@@ -210,14 +210,14 @@ Each requirement has a stable slug ID, as in the product requirements.
   ETA and finish clock time, using a moving-average rate.
 - R-decision-feed: The panel shows the most recent decisions with sender,
   subject, category, confidence and flags.
-- R-run-all: `run --all` processes all unprocessed inbox mail; without it a
-  run stops at `max_messages`.
-- R-resumable: A stopped or crashed run resumes from where it left off with
-  no message handled twice.
+- R-run-all: `run --all` processes the unprocessed inbox mail listed at its
+  start; without it a run stops at `max_messages`.
+- R-resumable: A stopped or crashed `--apply` run resumes where it left off,
+  with no message handled twice; a dry run starts over.
 - R-graceful-stop: `q` or one Ctrl-C stops after the current message; two
   Ctrl-C presses abort.
 - R-retry-transient: Rate limits and network errors retry with backoff and
-  are shown in the panel.
+  are shown in the panel or plain mode.
 - R-keep-awake: The Mac does not idle-sleep during a run.
 - R-notify: A macOS notification reports a finished run or a fatal error.
 - R-plain-mode: Without a terminal, or with `--plain`, output is one line
@@ -231,8 +231,8 @@ Each requirement has a stable slug ID, as in the product requirements.
 
 ## Success metrics
 
-- A 10,000-message backlog finishes in under 10 hours unattended.
-- Stopping and resuming a run never reprocesses or skips a message.
+- A 10,000-message backlog finishes in about 36 hours, unattended and resumable.
+- Stopping and resuming an `--apply` run never reprocesses or skips a message.
 - The ETA is within 20% of the actual finish time after the first 10
   minutes.
 

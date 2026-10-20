@@ -166,13 +166,16 @@ def run(
         if tally.started:
             _print_summary(tally.summary(), opts)
         raise UserError(ABORTED) from None
-    except UserError as error:
+    except Exception as error:
         # An apply run that fails midway has changed earlier messages; show
-        # its run ID and totals before the error.
+        # its run ID and totals before the error. Any error that ends the run
+        # notifies (R-notify); main() still reports only a UserError as one line.
         summary = tally.summary() if tally.started else None
-        if summary is not None:
-            _print_summary(summary, opts)
-        notify(notification_text(summary, str(error)))
+        try:
+            if summary is not None:
+                _print_summary(summary, opts)
+        finally:  # a failed print, such as a closed pipe, still notifies
+            notify(notification_text(summary, error_reason(error)))
         raise
     finally:
         engine.close()

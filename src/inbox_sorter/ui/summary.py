@@ -94,8 +94,8 @@ def print_summary(summary: RunSummary, out: TextIO) -> None:
 def notification_text(summary: RunSummary | None, error: str | None) -> str:
     """The macOS notification for a finished run or a fatal error (R-notify).
 
-    ``summary`` is None when the run ended before it started. Counts only:
-    no email content leaves the terminal (C-local-only).
+    ``summary`` is None when the run ended before it started. Counts and the
+    error's reason only; this adds no email content (C-local-only).
     """
     if error is not None:
         if summary is None:

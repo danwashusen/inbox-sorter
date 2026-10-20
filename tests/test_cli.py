@@ -718,6 +718,53 @@ def test_a_fatal_error_mid_apply_sends_one_notification_with_the_error(
     assert text.endswith("stopped on an error: modify failed for 'm2'")
 
 
+def test_an_unexpected_crash_mid_run_notifies_then_propagates(
+    tmp_path, monkeypatch, system_calls
+):
+    calls = []
+
+    def crash_on_second(request):
+        calls.append(request)
+        if len(calls) == 2:
+            raise RuntimeError("boom")
+        return answers()
+
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    args = run_args(tmp_path, monkeypatch, mailbox, FakeEngine(crash_on_second))
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert type(result.exception) is RuntimeError  # not a UserError: main() shows its traceback
+    summary = json.loads(result.stdout.splitlines()[-1])
+    assert summary["event"] == "summary"
+    assert system_calls["notify"] == [f"Run {summary['run']} stopped on an error: boom"]
+
+
+def test_a_crash_still_notifies_when_printing_the_summary_fails(
+    tmp_path, monkeypatch, system_calls
+):
+    calls = []
+
+    def crash_on_second(request):
+        calls.append(request)
+        if len(calls) == 2:
+            raise RuntimeError("boom")
+        return answers()
+
+    def closed_pipe(summary, opts):
+        raise BrokenPipeError("stdout closed")
+
+    mailbox = FakeMailbox([make_email("m1"), make_email("m2")])
+    args = run_args(tmp_path, monkeypatch, mailbox, FakeEngine(crash_on_second))
+    monkeypatch.setattr(cli, "_print_summary", closed_pipe)
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert type(result.exception) is BrokenPipeError
+    assert len(system_calls["notify"]) == 1
+    assert system_calls["notify"][0].endswith("stopped on an error: boom")
+
+
 def test_an_error_before_the_run_starts_still_notifies(tmp_path, monkeypatch, system_calls):
     class Unlistable(FakeMailbox):
         def list_unprocessed(self, page_token=None, page_size=100):
