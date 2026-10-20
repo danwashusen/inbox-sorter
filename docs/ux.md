@@ -198,7 +198,7 @@ The intended path to a large `--apply` run:
 1. `run --limit 200` (dry run is the default) and read the decisions.
 2. Tune category descriptions in the config until the sample looks right.
 3. `run --apply --limit 200`, then spot-check Gmail.
-4. `run --apply --all` for the backlog, left to run overnight.
+4. `run --apply --all` for the backlog, run unattended over a few nights.
 
 ## Requirements
 
