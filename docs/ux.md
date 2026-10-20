@@ -13,8 +13,8 @@ Status: draft, v1 scope. Product scope lives in the
 ## Goals
 
 - Glanceable: one look shows progress, ETA and what the sorter is doing.
-- Safe to leave: a backlog of 10,000+ unread emails runs overnight
-  unattended.
+- Safe to leave: a backlog of 10,000+ unread emails runs unattended,
+  resuming across nights.
 - Safe to stop: stopping at any point loses no work and leaves no message
   half-handled.
 - Pretty: a dashboard worth leaving open, without hiding scrollback.
