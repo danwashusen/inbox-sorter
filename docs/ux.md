@@ -217,7 +217,7 @@ Each requirement has a stable slug ID, as in the product requirements.
 - R-graceful-stop: `q` or one Ctrl-C stops after the current message; two
   Ctrl-C presses abort.
 - R-retry-transient: Rate limits and network errors retry with backoff and
-  are shown in the panel.
+  are shown in the panel or plain mode.
 - R-keep-awake: The Mac does not idle-sleep during a run.
 - R-notify: A macOS notification reports a finished run or a fatal error.
 - R-plain-mode: Without a terminal, or with `--plain`, output is one line
@@ -232,7 +232,7 @@ Each requirement has a stable slug ID, as in the product requirements.
 ## Success metrics
 
 - A 10,000-message backlog finishes in under 10 hours unattended.
-- Stopping and resuming a run never reprocesses or skips a message.
+- Stopping and resuming an `--apply` run never reprocesses or skips a message.
 - The ETA is within 20% of the actual finish time after the first 10
   minutes.
 
