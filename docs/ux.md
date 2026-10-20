@@ -72,7 +72,7 @@ reads in a monochrome terminal.
 - `q` finishes the current message, prints the summary and exits 0.
 - The first Ctrl-C behaves like `q`. A second Ctrl-C aborts at once, prints
   the summary and exits 1; the message in flight is left for the next run.
-- Transient errors retry with backoff, shown in the panel or `retrying` records.
+- Transient Gmail errors retry with backoff, shown in the panel or plain mode.
   A run stops on an error it can't retry, or when 10 retries fail (about 5 min).
 
 ## Summary

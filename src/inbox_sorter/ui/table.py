@@ -44,7 +44,7 @@ class TableReporter:
         self.dry_run = True
 
     def lines(self, event: RunEvent) -> list[str]:
-        """The lines ``event`` writes; the dashboard prints them above its panel."""
+        """The table lines for ``event``; none for an event the table does not show."""
         match event:
             case RunStarted():
                 self.dry_run = event.dry_run
