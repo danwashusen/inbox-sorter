@@ -102,8 +102,8 @@ One modify call per message makes each message all-or-nothing. A crash
 leaves it unprocessed, so the next run retries it (R-resumable). Logging
 before applying means `undo` never misses a change.
 
-Gmail and engine work alternate in one thread; `q` is read in another. At
-about 2.6 s per message, the model dominates, and Gmail calls add little.
+Gmail and engine work share one thread; `q` is read in another. At about 11 s
+a message (6 s snippet, 17 s body retry), the model dominates; Gmail is minor.
 
 ## Decision engines
 

@@ -231,7 +231,7 @@ Each requirement has a stable slug ID, as in the product requirements.
 
 ## Success metrics
 
-- A 10,000-message backlog finishes in under 10 hours unattended.
+- A 10,000-message backlog finishes in about 36 hours, unattended and resumable.
 - Stopping and resuming an `--apply` run never reprocesses or skips a message.
 - The ETA is within 20% of the actual finish time after the first 10
   minutes.

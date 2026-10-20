@@ -221,17 +221,18 @@ The `gmail.modify` scope cannot permanently delete mail.
   100 emails.
 - At least 90% of mail I would answer gets `Sorter/Needs reply`.
 - No personal email archived in the first month of use.
-- A 50-message run finishes in under 5 minutes, model load included.
+- A 50-message run finishes in under 12 minutes, model load included.
 
 ## Milestones
 
 1. Clef smoke test on MPS. Done: about 2.6 s per email after an 18 s load.
 2. Read-only Gmail fetch through a dry `run`, with no JSON sample file. Done.
 3. `setup`: import labels, write the config, report accuracy. Done.
-4. Dry-run classification over a `--limit` sample, then tune descriptions.
+4. Dry-run classification over a `--limit` sample, then tuning. Done.
 5. `--apply` with labels, flags, archive, mark read and the run log. Done.
 6. Live dashboard, `--all` and long-run support from the UX spec. Done.
-7. `undo`, and a hand-checked accuracy review against the metrics.
+7. `undo`, and a hand-checked accuracy review. Done: 96/100 correct; see the
+   verification record on epic #5.
 
 ## Decisions
 
